@@ -1,6 +1,7 @@
 import requests
 import math
-
+import socket
+import json
 
 class P2PHashTableClient:
     def __init__(self):
@@ -12,6 +13,7 @@ class P2PHashTableClient:
         lowRange = None # lowest radian number client is responsible for
         fingerTable = None # client's finger table
         projectName = None # project name to find in naming service
+        sock = None # socket for communications
     
     def enterRing(self, projectName):
         # To enter ring, need to check naming service to verify there is or isn't an existing client
@@ -24,7 +26,10 @@ class P2PHashTableClient:
         self.projectName = projectName
         
         #Use project name to locate server and test communication
-        if not self.locateServer():
+        
+        details = self.locateServer()
+        
+        if not details:
             self.startP2P()
         
     def locateServer(self):
@@ -40,6 +45,23 @@ class P2PHashTableClient:
             return False
         
         #TODO: Check to see if any servers are available
+        for entry in data:
+            #Contact each of these servers to see if they are available/in the ring
+            newSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                newSock.connect((entry['address'], entry['port']))
+                
+                #TODO: If connect succeeds, talk to connecting and get inserted into the ring
+                #      When connect succeeds, locate server will return socket
+                return newSock
+                
+            except:
+                #If error --> socket is no longer in ring, so continue to next iteration
+                continue
+        
+        #None of the nameserver sockets are in the ring
+        return False
+        
         
     def startP2P(self):
         #This method creates the P2P system --> First Hash the IP addr
@@ -57,7 +79,18 @@ class P2PHashTableClient:
         self.highRange = location
         
         #Differentiates the range by the smallest fraction
-        self.lowRange = location + 0.0000000000000001
+        self.lowRange = location + (1 / (pow(2,32) - 1) )
+        
+        #Start listening socket
+        port = 0
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind((self.ipAddress,port))
+        self.sock.listen()
+        
+        self.port = self.sock.getsockname()[1]
+        
+        self.sendToNameServer()
+        
 
     
     def hashKey(self, key):
@@ -77,7 +110,27 @@ class P2PHashTableClient:
         except: #Catch non strings and record as errors
             return False
         
+    def sendToNameServer(self):
+        #Send an update to the name server describing server
         
+        #Define message
+        jsonMessage = dict()
+        jsonMessage["type"] = "p2phashtable"
+        jsonMessage["owner"] = "begloff"
+        jsonMessage["port"] = self.port
+        jsonMessage["project"] = self.projectName
+        
+        jsonMessage = str(json.dumps(jsonMessage))
+        
+        
+        h = socket.gethostbyname("catalog.cse.nd.edu")
+        
+        nameServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        #FOR SOME REASON 9098 works but 9097 doesn't??????
+        nameServer.connect((h, 9097 + 1))
+        #Send Desc to name server
+        nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))        
         
         
 if __name__ == '__main__':
