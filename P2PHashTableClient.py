@@ -4,14 +4,18 @@ import math
 
 class P2PHashTableClient:
     def __init__(self):
-        ipAddress = None # IP of client --> where it can be reached
-        port = None # What port the client can be reached at
-        prev = None # prev node in the ring
-        next = None # next node in the ring
-        highRange = None # highest radian number client is responsible for
-        lowRange = None # lowest radian number client is responsible for
-        fingerTable = None # client's finger table
-        projectName = None # project name to find in naming service
+        self.ipAddress = None # IP of client --> where it can be reached
+        self.port = None # What port the client can be reached at
+
+        # TODO: where to put open socket connections
+        self.prev = None # prev node in the ring
+        self.next = None # next node in the ring
+        self.highRange = None # highest radian number client is responsible for
+        self.lowRange = None # lowest radian number client is responsible for
+        self.fingerTable = None # client's finger table
+        self.projectName = None # project name to find in naming service
+
+        # TODO: run enter ring here
     
     def enterRing(self, projectName):
         # To enter ring, need to check naming service to verify there is or isn't an existing client
@@ -76,10 +80,58 @@ class P2PHashTableClient:
 
         except: #Catch non strings and record as errors
             return False
+
+
+
+        def sendUpdateNext(self, next_args, dest_args):
+
+            msg = {'method': 'updateNext', 'next': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
         
+            # TODO: use ast.as_literal_eval() to parse messages 
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.connect((dest_args[1], dest_args[2]))
+                sock.sendall(msg)
+                # TODO: should receive a message back
+                ack = sock.recv(1024)
+                sock.close()
+            except:
+                return False
+
+        def sendUpdatePrev(self, prev_args, dest_args):
+
+            msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
         
-        
-        
+            # TODO: use ast.as_literal_eval() to parse messages 
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.connect((dest_args[1], dest_args[2]))
+                sock.sendall(msg)
+                # TODO: should receive a message back
+                ack = sock.recv(1024)
+                sock.close()
+            except:
+                return False
+
+        def sendUpdateRange(self, high, low, dest_args):
+
+            msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
+
+            # TODO: use ast.literal_eval() to parse messages
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.connect((dest_args[1], dest_args[2]))
+                sock.sendall(msg)
+                # TODO: should receive message back
+                ack = sock.recv(1024)
+                sock.close()
+            except:
+                return False
+
+
 if __name__ == '__main__':
     client = P2PHashTableClient()
     client.enterRing('begloff-project')
