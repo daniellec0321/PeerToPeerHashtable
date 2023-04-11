@@ -115,72 +115,73 @@ class P2PHashTableClient:
 
 
 
-        # In a successful case, return the message received. Otherwise, need to decide what semantics we will have for failure messages
-        def send_msg(self, msg, dest_args, ack=False):
+    # In a successful case, return the message received. Otherwise, need to decide what semantics we will have for failure messages
+    def send_msg(self, msg, dest_args, ack=False):
 
-            # msg MUST be a dictionary already ready for sending
-            if msg is not dict:
-                return None
+        # msg MUST be a dictionary already ready for sending
+        if not type(msg) is dict:
+            return None
 
-            # connect to destination
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                sock.connect((dest_args[1], dest_args[2]))
-            except:
-                # add the ability to retry and decide when to remove from finger table
-                return False
-
-            # send message
-            json_msg = json.dumps(msg)
-            msg_length = len(json_msg).to_bytes(4, byteorder='big')
-            try:
-                sock.sendall(msg_length + json_msg.encode())
-            except:
-                # like above, add ability to retry and decide when to remove from FT
-                return False
-
-            # should receive a message back (unless an acknowledgement)
-            if ack:
-                return True
-            try:
-                msg_length = int.from_bytes(sock.recv(4), byteorder='big')
-                json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-                ret = json.loads(json_msg)
-                sock.close()
-            except:
-                # retry and decide when to remove from FT
-                return False
-
-            return ret
-
-
-
-        def sendUpdateNext(self, next_args, dest_args):
-
-            msg = {'method': 'updateNext', 'next': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
-            ret_msg = send_msg(msg, dest_args)
-            # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-            if ret_msg:
-                return True
+        # connect to destination
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            # sock.connect(('student11.cse.nd.edu', 98907))
+            sock.connect((dest_args[1], dest_args[2]))
+        except:
+            # add the ability to retry and decide when to remove from finger table
             return False
 
-        def sendUpdatePrev(self, prev_args, dest_args):
-
-            msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
-            ret_msg = send_msg(msg, dest_args)
-            # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-            if ret_msg:
-                return True
+        # send message
+        json_msg = json.dumps(msg)
+        msg_length = len(json_msg).to_bytes(4, byteorder='big')
+        try:
+            sock.sendall(msg_length + json_msg.encode())
+        except:
+            # like above, add ability to retry and decide when to remove from FT
             return False
+
+        # should receive a message back (unless an acknowledgement)
+        if ack:
+            return True
+        try:
+            msg_length = int.from_bytes(sock.recv(4), byteorder='big')
+            json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
+            ret = json.loads(json_msg)
+            sock.close()
+        except:
+            # retry and decide when to remove from FT
+            return False
+
+        return ret
+
+
+
+    def sendUpdateNext(self, next_args, dest_args):
+
+        msg = {'method': 'updateNext', 'next': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
+        ret_msg = send_msg(msg, dest_args)
+        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        if ret_msg:
+            return True
+        return False
+
+    def sendUpdatePrev(self, prev_args, dest_args):
+
+        msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
+        ret_msg = send_msg(msg, dest_args)
+        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        if ret_msg:
+            return True
+        return False
         
-        def sendUpdateRange(self, high, low, dest_args):
+    def sendUpdateRange(self, high, low, dest_args):
 
-            msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
-            ret_msg = send_msg(msg, dest_args)
-            # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-            if ret_msg:
-                return True
-            return False
+        msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
+        ret_msg = send_msg(msg, dest_args)
+        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        if ret_msg:
+            return True
+        return False
 
 
 
