@@ -183,6 +183,28 @@ class P2PHashTableClient:
             return True
         return False
 
+    def sendToNameServer(self):
+        #Send an update to the name server describing server
+            
+        #Define message
+        jsonMessage = dict()
+        jsonMessage["type"] = "p2phashtable"
+        jsonMessage["owner"] = "begloff"
+        jsonMessage["port"] = self.port
+        jsonMessage["project"] = self.projectName
+        
+        jsonMessage = str(json.dumps(jsonMessage))
+
+
+        h = socket.gethostbyname("catalog.cse.nd.edu")
+        
+        nameServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        
+        #FOR SOME REASON 9098 works but 9097 doesn't??????
+        nameServer.connect((h, 9097 + 1))
+        #Send Desc to name server
+        nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
+
 
 
 if __name__ == '__main__':
