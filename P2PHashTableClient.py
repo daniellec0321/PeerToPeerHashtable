@@ -2,6 +2,7 @@ import requests
 import math
 import socket
 import json
+import time
 
 class P2PHashTableClient:
     def __init__(self):
@@ -132,8 +133,22 @@ class P2PHashTableClient:
         try:
             sock.connect((dest_args[1], dest_args[2]))
         except:
-            # add the ability to retry and decide when to remove from finger table
-            return {'status': 'failure', 'message': 'destination not responding'}
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    sock.connect((dest_args[1], dest_args[2]))
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.ft.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
         # send message
         json_msg = json.dumps(msg)
@@ -141,8 +156,22 @@ class P2PHashTableClient:
         try:
             sock.sendall(msg_length + json_msg.encode())
         except:
-            # like above, add ability to retry and decide when to remove from FT
-            return {'status': 'failure', 'message': 'destination not responding'}
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    sock.connect((dest_args[1], dest_args[2]))
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.ft.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
         if ack:
@@ -153,8 +182,22 @@ class P2PHashTableClient:
             ret = json.loads(json_msg)
             sock.close()
         except:
-            # retry and decide when to remove from FT
-            return {'status': 'failure', 'message': 'destination not responding'}
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    sock.connect((dest_args[1], dest_args[2]))
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.ft.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
         return {'status': 'success', 'message': ret}
 
