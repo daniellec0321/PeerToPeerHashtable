@@ -123,7 +123,7 @@ class P2PHashTableClient:
     # ack: a bool specifying whether we are sending an acknowledgement or not--if sending acknowledgement, don't need to wait for response
     # adj: a bool specifying if the destination is adjancent to the sender in the ring. If it is, then a failed response means there is a crash.
     # RETURNS A JSON MESSAGE
-    def send_msg(self, msg, dest_args, ack=False, adj=False):
+    def send_msg(self, msg, dest_args, ack=False):
 
         # msg MUST be a dictionary already ready for sending
         if not type(msg) is dict:
