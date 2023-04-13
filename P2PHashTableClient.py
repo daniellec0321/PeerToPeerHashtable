@@ -116,20 +116,24 @@ class P2PHashTableClient:
 
 
     # In a successful case, return the message received. Otherwise, need to decide what semantics we will have for failure messages
-    def send_msg(self, msg, dest_args, ack=False):
+    # msg: json message to send
+    # dest_args: a tuple representing where the message should go
+    # ack: a bool specifying whether we are sending an acknowledgement or not--if sending acknowledgement, don't need to wait for response
+    # adj: a bool specifying if the destination is adjancent to the sender in the ring. If it is, then a failed response means there is a crash.
+    # RETURNS A JSON MESSAGE
+    def send_msg(self, msg, dest_args, ack=False, adj=False):
 
         # msg MUST be a dictionary already ready for sending
         if not type(msg) is dict:
-            return None
+            return {'status': 'failure', 'message': 'message sent to function was not a dictionary'}
 
         # connect to destination
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            # sock.connect(('student11.cse.nd.edu', 98907))
             sock.connect((dest_args[1], dest_args[2]))
         except:
             # add the ability to retry and decide when to remove from finger table
-            return False
+            return {'status': 'failure', 'message': 'destination not responding'}
 
         # send message
         json_msg = json.dumps(msg)
@@ -138,11 +142,11 @@ class P2PHashTableClient:
             sock.sendall(msg_length + json_msg.encode())
         except:
             # like above, add ability to retry and decide when to remove from FT
-            return False
+            return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
         if ack:
-            return True
+            return {'status': 'success', 'message': 'acknowledgement sent'}
         try:
             msg_length = int.from_bytes(sock.recv(4), byteorder='big')
             json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
@@ -150,9 +154,9 @@ class P2PHashTableClient:
             sock.close()
         except:
             # retry and decide when to remove from FT
-            return False
+            return {'status': 'failure', 'message': 'destination not responding'}
 
-        return ret
+        return {'status': 'success', 'message': ret}
 
 
 

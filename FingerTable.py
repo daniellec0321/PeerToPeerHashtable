@@ -38,6 +38,11 @@ class FingerTable():
 
 
     def findProcess(self, position):
+
+        # Handle empty finger table
+        if len(self.ft) <= 0:
+            return None
+
         # find the process with a position that is juuuuust higher than the given position and return it
         for node in self.ft:
             if node[0] >= position:
