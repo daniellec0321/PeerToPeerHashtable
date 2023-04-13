@@ -3,6 +3,7 @@ import math
 import socket
 import json
 import time
+from FingerTable import FingerTable
 
 class P2PHashTableClient:
     def __init__(self):
@@ -14,7 +15,7 @@ class P2PHashTableClient:
         self.next = None # next node in the ring
         self.highRange = None # highest radian number client is responsible for
         self.lowRange = None # lowest radian number client is responsible for
-        self.fingerTable = None # client's finger table
+        self.fingerTable = FingerTable() # client's finger table
         self.projectName = None # project name to find in naming service
 
         # TODO: run enter ring here
@@ -147,7 +148,7 @@ class P2PHashTableClient:
                 wait *= 2
             # handle a failure to respond
             if success == False:
-                self.ft.delNode(dest_args[1])
+                self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
         # send message
@@ -170,7 +171,7 @@ class P2PHashTableClient:
                 wait *= 2
             # handle a failure to respond
             if success == False:
-                self.ft.delNode(dest_args[1])
+                self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
@@ -181,6 +182,7 @@ class P2PHashTableClient:
         try:
             msg_length = int.from_bytes(sock.recv(4), byteorder='big')
             json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
+            ret = json.loads(json_msg)
         except:
             # try 5 times, then send failure
             success = False
@@ -190,6 +192,7 @@ class P2PHashTableClient:
                 try:
                     msg_length = int.from_bytes(sock.recv(4), byteorder='big')
                     json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
+                    ret = json.loads(json_msg)
                     success = True
                     break
                 except:
@@ -197,11 +200,10 @@ class P2PHashTableClient:
                 wait *= 2
             # handle a failure to respond
             if success == False:
-                self.ft.delNode(dest_args[1])
+                self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
-        # load message and return
-        ret = json.loads(json_msg)
+        # return
         sock.close()
         return {'status': 'success', 'message': ret}
 

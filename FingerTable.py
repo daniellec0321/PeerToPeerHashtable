@@ -22,6 +22,11 @@ class FingerTable():
 
 
     def delNode(self, IP_ADDR):
+
+        # sanity checks
+        if (not self.ft) or len(self.ft) <= 0:
+            return False
+
         # delete node with that address
         to_delete = -1
         for idx, node in enumerate(self.ft):
