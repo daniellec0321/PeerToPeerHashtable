@@ -162,7 +162,7 @@ class P2PHashTableClient:
             while wait <= 0.8:
                 time.sleep(wait)
                 try:
-                    sock.connect((dest_args[1], dest_args[2]))
+                    sock.sendall(msg_length + json_msg.encode())
                     success = True
                     break
                 except:
@@ -174,13 +174,13 @@ class P2PHashTableClient:
                 return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
+        msg_length = 0
+        json_msg = None
         if ack:
             return {'status': 'success', 'message': 'acknowledgement sent'}
         try:
             msg_length = int.from_bytes(sock.recv(4), byteorder='big')
             json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-            ret = json.loads(json_msg)
-            sock.close()
         except:
             # try 5 times, then send failure
             success = False
@@ -188,7 +188,8 @@ class P2PHashTableClient:
             while wait <= 0.8:
                 time.sleep(wait)
                 try:
-                    sock.connect((dest_args[1], dest_args[2]))
+                    msg_length = int.from_bytes(sock.recv(4), byteorder='big')
+                    json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
                     success = True
                     break
                 except:
@@ -199,6 +200,9 @@ class P2PHashTableClient:
                 self.ft.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
+        # load message and return
+        ret = json.loads(json_msg)
+        sock.close()
         return {'status': 'success', 'message': ret}
 
 
