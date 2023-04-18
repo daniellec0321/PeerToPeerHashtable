@@ -148,11 +148,12 @@ class P2PHashTableClient:
 
                         #TODO: Compact transaction log if necessary and update checkpoint
 
-                        size = 1024 #Read in a KB at a time
-
                         # See if socket is still connected to client, otherwise break and start a new connection
                         try:
-                            data = self.conn.recv(size,socket.MSG_PEEK)
+                            # data = self.conn.recv(size,socket.MSG_PEEK)
+                            msg_length = int.from_bytes(self.conn.recv(4), byteorder='big')
+                            json_msg = self.conn.recv(msg_length).decode()
+                            stream = json.loads(json_msg)
                         except: #If error ask for new connection: Client quits 
                             #If client has left, remove from sockets dictionary
                             listen_list.remove(sock)
@@ -164,6 +165,7 @@ class P2PHashTableClient:
                             self.conn.close()
                             continue
 
+                        '''
                         stream = ''
 
                         #Read Loop --> loop while buffer still has anything in it
@@ -178,6 +180,7 @@ class P2PHashTableClient:
                             stream += data.decode('utf-8')
                             if len(data) < size:
                                 break
+                        '''
 
                         #Parse Data
                         if(stream):
@@ -305,7 +308,7 @@ class P2PHashTableClient:
 
     def sendUpdateNext(self, next_args, dest_args):
 
-        msg = {'method': 'updateNext', 'next': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
+        msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
         ret_msg = send_msg(msg, dest_args)
         # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
         if ret_msg:
