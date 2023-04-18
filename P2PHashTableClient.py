@@ -2,6 +2,8 @@ import requests
 import math
 import socket
 import json
+import select
+import sys
 import time
 from FingerTable import FingerTable
 
@@ -11,6 +13,10 @@ class P2PHashTableClient:
         self.port = None # What port the client can be reached at
 
         # TODO: where to put open socket connections
+        self.sock = None
+        self.conn = None
+        self.stdinDesc = None
+        
         self.prev = None # prev node in the ring
         self.next = None # next node in the ring
         self.highRange = None # highest radian number client is responsible for
@@ -36,6 +42,14 @@ class P2PHashTableClient:
         
         if not details:
             self.startP2P()
+        else:
+            #Details contains the information for sockets in the name server
+            #TODO: Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
+            
+            #Details contains a socket that you need to send a message to --> Send connection message
+            details.sendall(b'Yo, let me join')
+            pass
+                        
         
     def locateServer(self):
         
@@ -95,6 +109,86 @@ class P2PHashTableClient:
         self.port = self.sock.getsockname()[1]
         
         self.sendToNameServer()
+        self.readMessages()
+        
+    def readMessages(self):
+        
+        self.stdinDesc = sys.stdin.fileno()
+        
+        print(f"Listening on Port {self.sock.getsockname()[1]}")
+        self.sock.settimeout(60)
+        listen_list = [self.sock, self.stdinDesc]
+        write_list = []
+        exception_list = []
+        
+        while True:
+            try:
+                read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
+                for sock in read_sockets:
+                    
+                    if sock == self.sock: #MasterSocket ready for reading
+                
+                        conn, addr = self.sock.accept()
+                        
+                        listen_list.append(conn)
+                        
+                    elif sock == self.stdinDesc:
+                        #This flag is set off when there is keyboard input and enter is pressed
+                        print(input())
+                        #TODO: Call function that handles user input
+                        pass
+                        
+                    else:
+                        
+                        #Updates self.conn to be current connection
+                        self.conn = sock
+                        
+                        # while True:
+                        #Accept incoming connection and read JSON sent over --> typically where you accept
+
+                        #TODO: Compact transaction log if necessary and update checkpoint
+
+                        size = 1024 #Read in a KB at a time
+
+                        # See if socket is still connected to client, otherwise break and start a new connection
+                        try:
+                            data = self.conn.recv(size,socket.MSG_PEEK)
+                        except: #If error ask for new connection: Client quits 
+                            #If client has left, remove from sockets dictionary
+                            listen_list.remove(sock)
+                            self.conn.close()
+                            break
+
+                        if not data: #Issue: getting stuck here if client ends naturally
+                            listen_list.remove(sock) #If no data when checking the stream --> delete socket
+                            self.conn.close()
+                            continue
+
+                        stream = ''
+
+                        #Read Loop --> loop while buffer still has anything in it
+                        while True:
+                            try:
+                                data = self.conn.recv(size)
+                            except:
+                                break
+
+                            if not data:
+                                break
+                            stream += data.decode('utf-8')
+                            if len(data) < size:
+                                break
+
+                        #Parse Data
+                        if(stream):
+                            #TODO: Define Way to parse stream
+                            print(stream)
+                                
+            except TimeoutError: #This exception is taken on timeout
+                #TODO: Define Exception for timeout
+                        
+                # self.sendToNameServer()
+                pass
         
 
     
