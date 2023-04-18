@@ -151,7 +151,7 @@ class P2PHashTableClient:
             curr_time = time.time()
             if (curr_time - last_time) > 60:
                 last_time = curr_time
-                sanityCheck()
+                self.sanityCheck()
 
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
@@ -195,23 +195,6 @@ class P2PHashTableClient:
                             listen_list.remove(sock) #If no data when checking the stream --> delete socket
                             self.conn.close()
                             continue
-
-                        '''
-                        stream = ''
-
-                        #Read Loop --> loop while buffer still has anything in it
-                        while True:
-                            try:
-                                data = self.conn.recv(size)
-                            except:
-                                break
-
-                            if not data:
-                                break
-                            stream += data.decode('utf-8')
-                            if len(data) < size:
-                                break
-                        '''
 
                         #Parse Data
                         if(stream):
