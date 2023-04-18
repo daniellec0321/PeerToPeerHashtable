@@ -110,7 +110,28 @@ class P2PHashTableClient:
         
         self.sendToNameServer()
         self.readMessages()
-        
+
+    # check if next and previous are still the next and previous
+    def sanityCheck(self):
+
+        # send updatePrev to next
+        prev_args = (self.highRange, self.ipAddress, self.port)
+        dest_args = self.next
+        ret = self.sendUpdatePrev(prev_args, dest_args)
+        if ret == False:
+            # TODO: create a function to handle crashes
+            pass
+
+        # send updateNext to prev
+        next_args = (self.highRange, self.ipAddress, self.port)
+        dest_args = self.prev
+        ret = self.sendUpdateNext(next_args, dest_args)
+        if ret == False:
+            # TODO: create a function to handle crashes
+            pass
+
+
+
     def readMessages(self):
         
         self.stdinDesc = sys.stdin.fileno()
@@ -120,8 +141,18 @@ class P2PHashTableClient:
         listen_list = [self.sock, self.stdinDesc]
         write_list = []
         exception_list = []
+
+        # variable to keep track of when to do sanity checks
+        last_time = time.time()
         
         while True:
+
+            # check if 60 seconds have passed and perform sanity check if necessary
+            curr_time = time.time()
+            if (curr_time - last_time) > 60:
+                last_time = curr_time
+                self.sanityCheck()
+
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
                 for sock in read_sockets:
@@ -160,27 +191,10 @@ class P2PHashTableClient:
                             self.conn.close()
                             break
 
-                        if not data: #Issue: getting stuck here if client ends naturally
+                        if not stream: #Issue: getting stuck here if client ends naturally
                             listen_list.remove(sock) #If no data when checking the stream --> delete socket
                             self.conn.close()
                             continue
-
-                        '''
-                        stream = ''
-
-                        #Read Loop --> loop while buffer still has anything in it
-                        while True:
-                            try:
-                                data = self.conn.recv(size)
-                            except:
-                                break
-
-                            if not data:
-                                break
-                            stream += data.decode('utf-8')
-                            if len(data) < size:
-                                break
-                        '''
 
                         #Parse Data
                         if(stream):
@@ -306,32 +320,39 @@ class P2PHashTableClient:
 
 
 
+    # next_args: a tuple containing the arguments that the destination should set as its next
+    # dest_args: a tuple containing the arguments of where the message should be sent
+    # Returns a boolean of whether the update succeeded or not
     def sendUpdateNext(self, next_args, dest_args):
 
         msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-        if ret_msg:
-            return True
-        return False
+        ret_msg = self.send_msg(msg, dest_args)
+        if ret_msg['status'] == 'failure':
+            return False
+        return True
 
+    # prev_args: a tuple containing the arguments that the destination should set as its prev
+    # dest_args: a tuple containing the arguments of where the message should be sent
+    # Returns a boolean of whether the update succeeded or not
     def sendUpdatePrev(self, prev_args, dest_args):
 
         msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-        if ret_msg:
-            return True
-        return False
+        ret_msg = self.send_msg(msg, dest_args)
+        if ret_msg['status'] == 'failure':
+            return False
+        return True
         
+    # high: a number containing the value of the 'high' range
+    # low: a number containing the value of the 'low' range
+    # dest_args: a tuple containing the arguments of where the message should be sent
+    # Returns a boolean of whether the update succeeded or not
     def sendUpdateRange(self, high, low, dest_args):
 
         msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
-        if ret_msg:
-            return True
-        return False
+        ret_msg = self.send_msg(msg, dest_args)
+        if ret_msg['status'] == 'failure':
+            return False
+        return True
 
     def sendToNameServer(self):
         #Send an update to the name server describing server
