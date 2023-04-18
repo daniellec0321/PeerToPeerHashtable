@@ -113,11 +113,11 @@ class P2PHashTableClient:
 
     # check if next and previous are still the next and previous
     def sanityCheck(self):
-        
+
         # send updatePrev to next
         prev_args = (self.highRange, self.ipAddress, self.port)
         dest_args = self.next
-        ret = updatePrev(prev_args, dest_args)
+        ret = self.sendUpdatePrev(prev_args, dest_args)
         if ret == False:
             # TODO: create a function to handle crashes
             pass
@@ -125,10 +125,11 @@ class P2PHashTableClient:
         # send updateNext to prev
         next_args = (self.highRange, self.ipAddress, self.port)
         dest_args = self.prev
-        ret = updateNext(next_args, dest_args)
+        ret = self.sendUpdateNext(next_args, dest_args)
         if ret == False:
             # TODO: create a function to handle crashes
             pass
+
 
 
     def readMessages(self):
@@ -342,8 +343,7 @@ class P2PHashTableClient:
     def sendUpdateNext(self, next_args, dest_args):
 
         msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
@@ -354,8 +354,7 @@ class P2PHashTableClient:
     def sendUpdatePrev(self, prev_args, dest_args):
 
         msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
@@ -367,8 +366,7 @@ class P2PHashTableClient:
     def sendUpdateRange(self, high, low, dest_args):
 
         msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
