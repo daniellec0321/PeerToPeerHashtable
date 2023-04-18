@@ -119,41 +119,48 @@ class P2PHashTableClient:
         dest_args = self.next
         ret = updatePrev(prev_args, dest_args)
         if ret == False:
-            # TODO: create a function to handle crashes
-            pass
+            handleCrash(dest_args, 'next')
 
         # send updateNext to prev
         next_args = (self.highRange, self.ipAddress, self.port)
         dest_args = self.prev
         ret = updateNext(next_args, dest_args)
         if ret == False:
-            # TODO: create a function to handle crashes
-            pass
+            handleCrash(dest_args, 'prev')
 
 
 
     # crash_args: the tuple of the destination that crashed
-    # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves
+    # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
 
         # TODO: handle the case where there were only two processes in the ring and one of them crashed
         
         # If the process that crashed is the next:
         if position == 'next':
-            # TODO: find crash's next node using finger table
-            crashNextNode = self.findProcess(crash_args, 'next')
-            # TODO: send update prev to crash's next node. The prev will be ourselves.
-            # TODO: update our next to be the crash's next node
-            # TODO: update our range of values to cover for the crashed node
-            # TODO: create method that sends a node's current range
+            success = False
+            while success == False:
+                # Find crash's next node using finger table
+                crashNextNode = self.findProcess(crash_args, 'next')
+                # Send update prev to crash's next node. The prev will be ourselves.
+                success = self.sendUpdatePrev((self.highRange, self.ipAdress, self.port), crashNextNode)
+            # Update our next to be the crash's next node
+            self.next = crashNextNode
+            # Update our range of values to cover for the crashed node
+            self.highRange = crash_args[0]
 
         # If the process that crashed is the prev:
-        else:
-            # TODO: find crash's prev node using finger table
-            crashPrevNode = self.findProcess(crash_args, 'prev')
-            # TODO: send update next to the crash's prev node. The next will be ourselves
-            # TODO: update our previous to be the crash's prev node
-            # TODO: send an update range to crash's prev
+        elif position == 'prev':
+            success = False
+            while success == False:
+                # Find crash's prev node using finger table
+                crashPrevNode = self.findProcess(crash_args, 'prev')
+                # Send update next to the crash's prev node. The next will be ourselves
+                success = self.sendUpdateNext((self.highRange, self.ipAdress, self.port), crashPrevNode)
+            # Update our previous to be the crash's prev node
+            self.prev = crashPrevNode
+            # Send an update range to crash's prev
+            success = self.sendUpdateRange(crash_args[0], -1, crashPrevNode)
 
 
 
@@ -167,13 +174,27 @@ class P2PHashTableClient:
             if (dest_args[1] == self.next[1]) and (dest_args[2] == self.next[2]):
                 return (self.highRange, self.ipAddress, self.port)
 
-            # TODO: handle a recursive call to find process
+            # Contact finger table to find process to contact
+            # Trying to find dest_args previous so need to undershoot
+            ret = self.fingerTable.findProcess(dest_args[0], False)
+
+            # TODO: function to tell a process to find another process
+
+            # for now, assume we found process
+            return process
 
         else:
             if (dest_args[1] == self.prev[1]) and (dest_args[2] == self.prev[2]):
                 return (self.highRange, self.ipAddress, self.port)
+
+            # Contact finger table to find process to contact
+            # Trying to find dest_args next so need to overshoot
+            ret = self.fingerTable.findProcess(dest_args[0], True)
             
-            # TODO: handle a recursive call to find process
+            # TODO: function to tell a process to find another process
+
+            # for now, assume we found process
+            return process
 
 
 
