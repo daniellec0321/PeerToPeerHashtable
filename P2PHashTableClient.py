@@ -4,6 +4,8 @@ import socket
 import json
 import select
 import sys
+import time
+from FingerTable import FingerTable
 
 class P2PHashTableClient:
     def __init__(self):
@@ -19,7 +21,7 @@ class P2PHashTableClient:
         self.next = None # next node in the ring
         self.highRange = None # highest radian number client is responsible for
         self.lowRange = None # lowest radian number client is responsible for
-        self.fingerTable = None # client's finger table
+        self.fingerTable = FingerTable() # client's finger table
         self.projectName = None # project name to find in naming service
 
         # TODO: run enter ring here
@@ -210,20 +212,38 @@ class P2PHashTableClient:
 
 
     # In a successful case, return the message received. Otherwise, need to decide what semantics we will have for failure messages
+    # msg: json message to send
+    # dest_args: a tuple representing where the message should go
+    # ack: a bool specifying whether we are sending an acknowledgement or not--if sending acknowledgement, don't need to wait for response
+    # adj: a bool specifying if the destination is adjancent to the sender in the ring. If it is, then a failed response means there is a crash.
+    # RETURNS A JSON MESSAGE
     def send_msg(self, msg, dest_args, ack=False):
 
         # msg MUST be a dictionary already ready for sending
         if not type(msg) is dict:
-            return None
+            return {'status': 'failure', 'message': 'message sent to function was not a dictionary'}
 
         # connect to destination
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            # sock.connect(('student11.cse.nd.edu', 98907))
             sock.connect((dest_args[1], dest_args[2]))
         except:
-            # add the ability to retry and decide when to remove from finger table
-            return False
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    sock.connect((dest_args[1], dest_args[2]))
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.fingerTable.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
         # send message
         json_msg = json.dumps(msg)
@@ -231,22 +251,55 @@ class P2PHashTableClient:
         try:
             sock.sendall(msg_length + json_msg.encode())
         except:
-            # like above, add ability to retry and decide when to remove from FT
-            return False
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    sock.sendall(msg_length + json_msg.encode())
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.fingerTable.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
+        msg_length = 0
+        json_msg = None
         if ack:
-            return True
+            return {'status': 'success', 'message': 'acknowledgement sent'}
         try:
             msg_length = int.from_bytes(sock.recv(4), byteorder='big')
             json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
             ret = json.loads(json_msg)
-            sock.close()
         except:
-            # retry and decide when to remove from FT
-            return False
+            # try 5 times, then send failure
+            success = False
+            wait = 0.05
+            while wait <= 0.8:
+                time.sleep(wait)
+                try:
+                    msg_length = int.from_bytes(sock.recv(4), byteorder='big')
+                    json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
+                    ret = json.loads(json_msg)
+                    success = True
+                    break
+                except:
+                    pass
+                wait *= 2
+            # handle a failure to respond
+            if success == False:
+                self.fingerTable.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
 
-        return ret
+        # return
+        sock.close()
+        return {'status': 'success', 'message': ret}
 
 
 

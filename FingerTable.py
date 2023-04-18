@@ -22,6 +22,11 @@ class FingerTable():
 
 
     def delNode(self, IP_ADDR):
+
+        # sanity checks
+        if (not self.ft) or len(self.ft) <= 0:
+            return False
+
         # delete node with that address
         to_delete = -1
         for idx, node in enumerate(self.ft):
@@ -38,6 +43,11 @@ class FingerTable():
 
 
     def findProcess(self, position):
+
+        # Handle empty finger table
+        if len(self.ft) <= 0:
+            return None
+
         # find the process with a position that is juuuuust higher than the given position and return it
         for node in self.ft:
             if node[0] >= position:
