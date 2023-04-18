@@ -45,7 +45,7 @@ class P2PHashTableClient:
             #TODO: Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
             
             #Details contains a socket that you need to send a message to --> Send connection message
-            # details.sendall(b'Yo, let me join')
+            details.sendall(b'Yo, let me join')
             pass
                         
         
@@ -121,7 +121,7 @@ class P2PHashTableClient:
         
         while True:
             try:
-                read_sockets, write_sockets, error_sockets = select.select(listen_list, [], [],0)
+                read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
                 for sock in read_sockets:
                     
                     if sock == self.sock: #MasterSocket ready for reading
@@ -132,7 +132,7 @@ class P2PHashTableClient:
                         
                     elif sock == self.stdinDesc:
                         #This flag is set off when there is keyboard input and enter is pressed
-                        
+                        print(input())
                         #TODO: Call function that handles user input
                         pass
                         
