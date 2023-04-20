@@ -45,10 +45,19 @@ class P2PHashTableClient:
         else:
             #Details contains the information for sockets in the name server
             #TODO: Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
+            port = 0
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.bind((self.ipAddress,port))
+            self.sock.listen()
+            
+            self.port = self.sock.getsockname()[1]
             
             #Details contains a socket that you need to send a message to --> Send connection message
-            details.sendall(b'Yo, let me join')
-            pass
+            
+            if self.sendJoinRequest(details):
+                #If join request succeeds, send to name server and start reading messages
+                self.sendToNameServer()
+                self.readMessages()
                         
         
     def locateServer(self):
@@ -72,7 +81,10 @@ class P2PHashTableClient:
                 
                 #TODO: If connect succeeds, talk to connecting and get inserted into the ring
                 #      When connect succeeds, locate server will return socket
-                return newSock
+                newSock.close()
+                
+                #Gives dest_addr format --> don't have highRange yet
+                return (None, entry['address'], entry['port'])
                 
             except:
                 #If error --> socket is no longer in ring, so continue to next iteration
@@ -89,16 +101,16 @@ class P2PHashTableClient:
         
         # Max Hash for djb2 is 2^32 - 1
         # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
-        ratio = hashedIP / (pow(2,32) - 1)
+        ratio = hashedIP / (pow(2,32) - 1) 
         
         #Multiply ratio by 2pi radians to find its exact spot on the ring
         location = ratio * 2 * math.pi
-        
+
         #Both ranges will be approx equal
         self.highRange = location
         
         #Differentiates the range by the smallest fraction
-        self.lowRange = location + (1 / (pow(2,32) - 1) )
+        self.lowRange = location + (1 / pow(2,52) )
         
         #Start listening socket
         port = 0
@@ -113,18 +125,18 @@ class P2PHashTableClient:
 
     # check if next and previous are still the next and previous
     def sanityCheck(self):
-        
+
         # send updatePrev to next
         prev_args = (self.highRange, self.ipAddress, self.port)
         dest_args = self.next
-        ret = updatePrev(prev_args, dest_args)
+        ret = self.sendUpdatePrev(prev_args, dest_args)
         if ret == False:
             handleCrash(dest_args, 'next')
 
         # send updateNext to prev
         next_args = (self.highRange, self.ipAddress, self.port)
         dest_args = self.prev
-        ret = updateNext(next_args, dest_args)
+        ret = self.sendUpdateNext(next_args, dest_args)
         if ret == False:
             handleCrash(dest_args, 'prev')
 
@@ -211,6 +223,7 @@ class P2PHashTableClient:
 
 
 
+
     def readMessages(self):
         
         self.stdinDesc = sys.stdin.fileno()
@@ -230,7 +243,7 @@ class P2PHashTableClient:
             curr_time = time.time()
             if (curr_time - last_time) > 60:
                 last_time = curr_time
-                sanityCheck()
+                self.sanityCheck()
 
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
@@ -275,27 +288,11 @@ class P2PHashTableClient:
                             self.conn.close()
                             continue
 
-                        '''
-                        stream = ''
-
-                        #Read Loop --> loop while buffer still has anything in it
-                        while True:
-                            try:
-                                data = self.conn.recv(size)
-                            except:
-                                break
-
-                            if not data:
-                                break
-                            stream += data.decode('utf-8')
-                            if len(data) < size:
-                                break
-                        '''
-
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
                             print(stream)
+                            self.parseStream(stream, msg_length)
                                 
             except TimeoutError: #This exception is taken on timeout
                 #TODO: Define Exception for timeout
@@ -303,12 +300,78 @@ class P2PHashTableClient:
                 # self.sendToNameServer()
                 pass
         
+    def parseStream(self, stream, msg_length):
+        #After receiving message need to check that 2 lengths match, then extract fields from stream
+        if msg_length != len(str(stream)):
+            #Encountered malformed stream
+            return False
+        
+        #Two different types of methods--> ack and requests
+        
+        
+        if stream['method'] == 'join':
+            #Handle adding node to the ring
+            msg = self.addToRing(stream['from'])
+            #Need to send message back
+            print(self.send_msg(msg, stream['from']))
+        elif stream['method'] == 'updateNext':
+            #Handle updating next node
+            pass
+        elif stream['method'] == 'updatePrev':
+            #Handle updating prev node
+            pass
+        elif stream['method'] == 'updateRange':
+            #Handle updatingRange
+            pass
+        elif stream['method'] == 'ack':
+            #Handle acknowledgement
+            pass
+        
+    def addToRing(self, details):
+        #To add node to ring need to hashIP
+        hashedIP = self.hashKey(details[1])
+        
+        # Max Hash for djb2 is 2^32 - 1
+        # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
+        ratio = hashedIP / (pow(2,32) - 1)
+        
+        #Multiply ratio by 2pi radians to find its exact spot on the ring
+        location = ratio * 2 * math.pi
+        
+        highRange = location
+        
+        #If fingertable is empty, then this is the second node joining so can just add to it
+        if len(self.fingerTable.ft) == 0:
+            self.fingerTable.addNode((highRange, details[1], details[2]))
+            
+            #After adding finger table, need to get low range for new node and update your own low range
+            self.lowRange = highRange + (1 / pow(2,52) )
+            
+            lowRange = self.highRange + (1 / pow(2,52))
+            
+            #Set next and prev as this node
+            prev = (self.highRange, self.ipAddress, self.port)
+            next = (self.highRange, self.ipAddress, self.port)
+            self.prev = (highRange, details[1], details[2])
+            self.next = (highRange, details[1], details[2])
+            
+        #TODO: Adding into ring when there are more than 2 members
+                
+                
 
+        #Once you have high Range --> get low range by consulting finger table
+        # It will send the new node’s position in the ring, a copy of the process’ finger table, the new node’s previous process, and the new node’s next process
+        
+        # Need to send back to the node highRange, lowRange, next, prev
+        return {'status': 'success', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange}
     
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
         
         # NOTE: Max Hash -->  2^{32} - 1 = 4,294,967,295
+        # print(key)
+        
+        #Need to modify hashing algorithm to more evenly distribute these nodes
         
         try:
         
@@ -317,7 +380,12 @@ class P2PHashTableClient:
             for x in key:
                 hashedKey = (( hashedKey << 5) + hashedKey) + ord(x)
             
-            return hashedKey & 0xFFFFFFFF
+            a = hashedKey & 0xFFFFFFFF
+            
+            #Self entered to try and diversify ip hashes
+            a = a * (int(key[0]) + 1) * (int(key[-1]) * 9999 + 1 )
+            a = a % (pow(2,32) - 1)
+            return a
 
         except: #Catch non strings and record as errors
             return False
@@ -422,8 +490,7 @@ class P2PHashTableClient:
     def sendUpdateNext(self, next_args, dest_args):
 
         msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
@@ -434,8 +501,7 @@ class P2PHashTableClient:
     def sendUpdatePrev(self, prev_args, dest_args):
 
         msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
-        # Need to check contents of ret_msg to decide whether to return 'Success' or 'Failure'
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
@@ -447,10 +513,15 @@ class P2PHashTableClient:
     def sendUpdateRange(self, high, low, dest_args):
 
         msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = send_msg(msg, dest_args)
+        ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
+
+    def sendJoinRequest(self, dest_args):
+        
+        msg = {'method': 'join', 'from': (self.highRange, self.ipAddress, self.port)}
+        ret_msg = self.send_msg(msg, dest_args)
 
     def sendToNameServer(self):
         #Send an update to the name server describing server
