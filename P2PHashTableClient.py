@@ -143,7 +143,7 @@ class P2PHashTableClient:
                 # Find crash's next node using finger table
                 crashNextNode = self.findProcess(crash_args, 'next')
                 # Send update prev to crash's next node. The prev will be ourselves.
-                success = self.sendUpdatePrev((self.highRange, self.ipAdress, self.port), crashNextNode)
+                success = self.sendUpdatePrev((self.highRange, self.ipAddress, self.port), crashNextNode)
             # Update our next to be the crash's next node
             self.next = crashNextNode
             # Update our range of values to cover for the crashed node
@@ -156,7 +156,7 @@ class P2PHashTableClient:
                 # Find crash's prev node using finger table
                 crashPrevNode = self.findProcess(crash_args, 'prev')
                 # Send update next to the crash's prev node. The next will be ourselves
-                success = self.sendUpdateNext((self.highRange, self.ipAdress, self.port), crashPrevNode)
+                success = self.sendUpdateNext((self.highRange, self.ipAddress, self.port), crashPrevNode)
             # Update our previous to be the crash's prev node
             self.prev = crashPrevNode
             # Send an update range to crash's prev
@@ -195,6 +195,19 @@ class P2PHashTableClient:
 
             # for now, assume we found process
             return process
+
+
+
+    # use finger table or next and prev pointers to take a message to a process
+    # msg: dictionary of the message to send
+    # position: position on the ring where this message is trying to go
+    def forwardMessage(self, msg, position):
+
+        from_args = msg['from']
+
+        # find where to send process on finger table
+        pass
+
 
 
 
