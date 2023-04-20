@@ -257,7 +257,11 @@ class P2PHashTableClient:
                         
                     elif sock == self.stdinDesc:
                         #This flag is set off when there is keyboard input and enter is pressed
-                        print(input())
+                        i = input()
+                        
+                        if i == '1':
+                            self.sendUpdateNext((1, self.ipAddress, self.port), self.next)
+                            
                         #TODO: Call function that handles user input
                         pass
                         
@@ -313,24 +317,45 @@ class P2PHashTableClient:
                 #Handle adding node to the ring
                 msg = self.addToRing(stream['from'])
                 #Need to send message back
-                self.send_msg(msg, stream['from'])
+                self.send_msg(msg, stream['from'], True)
             elif stream['method'] == 'join':
                 self.next = stream['next']
                 self.prev = stream['prev']
                 self.highRange = stream['highRange']
                 self.lowRange = stream['lowRange']
+                
+                msg = {'method': 'ack', 'message': 'Successfully joined ring'}
+                self.send_msg(msg, stream['from'], True)
+                
             elif stream['method'] == 'updateNext':
-                #Handle updating next node
-                pass
+                #Handle updating next node --> need to send ack
+                self.next = stream['next']
+                print('Updated Next', self.next)
+                msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
+                self.send_msg(msg, stream['from'], True)
+                
             elif stream['method'] == 'updatePrev':
-                #Handle updating prev node
-                pass
+                #Handle updating prev node --> need to send ack
+                self.prev = stream['prev']
+                msg = {'method': 'ack', 'message': 'Successfully updated prev pointer'}
+                self.send_msg(msg, stream['from'], True)
+                
             elif stream['method'] == 'updateRange':
-                #Handle updatingRange
-                pass
-            elif stream['method'] == 'ack':
-                #Handle acknowledgement
-                pass
+                #Handle updatingRange --> need to send ack
+                if stream['low'] < 0 and stream['high'] > 0:
+                    #Don't update low, but update high
+                    self.highRange = stream['high']
+                    
+                elif stream['low'] > 0 and stream['high'] < 0:
+                    #Dont update high, but update low
+                    self.lowRange = stream['low']
+                    
+                elif stream['low'] > 0 and stream['high'] > 0:
+                    self.lowRange = stream['low']
+                    self.highRange = stream['high']
+                    
+                msg = {'method': 'ack', 'message': 'Successfully updated range'}
+                self.send_msg(msg, stream['from'], True)
         
     def addToRing(self, details):
         #To add node to ring need to hashIP
@@ -366,11 +391,10 @@ class P2PHashTableClient:
         # It will send the new node’s position in the ring, a copy of the process’ finger table, the new node’s previous process, and the new node’s next process
         
         # Need to send back to the node highRange, lowRange, next, prev
-        return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange}
+        return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'from': (self.highRange, self.ipAddress, self.port)}
     
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
-        
         # NOTE: Max Hash -->  2^{32} - 1 = 4,294,967,295
         # print(key)
         
@@ -491,7 +515,6 @@ class P2PHashTableClient:
     # dest_args: a tuple containing the arguments of where the message should be sent
     # Returns a boolean of whether the update succeeded or not
     def sendUpdateNext(self, next_args, dest_args):
-
         msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
