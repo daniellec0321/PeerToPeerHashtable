@@ -530,38 +530,104 @@ class P2PHashTableClient:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
-        # should receive a message back (unless an acknowledgement)
-        msg_length = 0
-        json_msg = None
         if ack:
             return {'status': 'success', 'message': 'acknowledgement sent'}
+
+        # read from ready connection
+        data_size = ''
+        data = b''
         try:
-            msg_length = int.from_bytes(sock.recv(4), byteorder='big')
-            json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-            ret = json.loads(json_msg)
+            data = sock.recv(1)
         except:
-            # try 5 times, then send failure
-            success = False
-            wait = 0.05
-            while wait <= 0.8:
-                time.sleep(wait)
+            # TRY AGAIN HERE--FAIL IF NEEDED
+            wait = 0.01
+            while wait < 1:
                 try:
-                    msg_length = int.from_bytes(sock.recv(4), byteorder='big')
-                    json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-                    ret = json.loads(json_msg)
-                    success = True
+                    data = sock.recv(1)
                     break
                 except:
-                    pass
-                wait *= 2
-            # handle a failure to respond
-            if success == False:
+                    wait += 0.01
+            if wait >= 1:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
+        data = data.decode("utf-8")
 
-        # return
-        sock.close()
-        return {'status': 'success', 'message': ret}
+        # read in message size
+        # break_outer = False
+        while data and ('!' not in data):
+            data_size += data
+            try:
+                data = sock.recv(1)
+            except:
+                # TRY AGAIN HERE--FAIL IF NEEDED
+                wait = 0.01
+                while wait < 1:
+                    try:
+                        data = sock.recv(1)
+                        break
+                    except:
+                        wait += 0.01
+                if wait >= 1:
+                    self.fingerTable.delNode(dest_args[1])
+                    return {'status': 'failure', 'message': 'destination not responding'}
+            data = data.decode("utf-8")
+
+        # read the amount of data size 1KB at a time--check data size first
+        try:
+            data_size = int(data_size)
+        except ValueError:
+            return {'status': 'failure', 'message': 'connection sent invalid message'}
+        data = ''
+        num_loops = int(data_size / 1024)
+        leftover = data_size % 1024
+
+        # set flags and loop
+        for i in range(0, num_loops):
+            b = b''
+            try:
+                b = sock.recv(1024)
+            except:
+                # TRY AGAIN HERE--FAIL IF NEEDED
+                wait = 0.01
+                while wait < 1:
+                    try:
+                        data = sock.recv(1)
+                        break
+                    except:
+                        wait += 0.01
+                if wait >= 1:
+                    self.fingerTable.delNode(dest_args[1])
+                    return {'status': 'failure', 'message': 'destination not responding'}
+            data += b.decode("utf-8")
+
+        # decode leftover
+        b = b''
+        try:
+            b = sock.recv(leftover)
+        except:
+            # TRY AGAIN HERE--FAIL IF NEEDED
+            wait = 0.01
+            while wait < 1:
+                try:
+                    data = sock.recv(1)
+                    break
+                except:
+                    wait += 0.01
+            if wait >= 1:
+                self.fingerTable.delNode(dest_args[1])
+                return {'status': 'failure', 'message': 'destination not responding'}
+        data += b.decode("utf-8")
+
+        # convert to json
+        json_msg = {}
+        try:
+            json_msg = json.loads(data)
+        except:
+            return {'status': 'failure', 'message': 'socket sent invalid data'}
+
+        # return the message
+        return {'status': 'success', 'message': json_msg}
+
 
 
 
