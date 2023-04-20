@@ -296,7 +296,12 @@ class P2PHashTableClient:
                         if(stream):
                             #TODO: Define Way to parse stream
                             print('Message Recieved: ', stream)
+                            self.conn.close()
                             self.parseStream(stream, msg_length)
+                            listen_list.remove(sock)
+                            
+                            
+                            
                                 
             except TimeoutError: #This exception is taken on timeout
                 #TODO: Define Exception for timeout
@@ -330,7 +335,7 @@ class P2PHashTableClient:
             elif stream['method'] == 'updateNext':
                 #Handle updating next node --> need to send ack
                 self.next = stream['next']
-                print('Updated Next', self.next)
+                print('Updated Next', self.prev)
                 msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
                 self.send_msg(msg, stream['from'], True)
                 
