@@ -540,13 +540,13 @@ class P2PHashTableClient:
             data = sock.recv(1)
         except:
             # TRY AGAIN HERE--FAIL IF NEEDED
-            wait = 0.01
+            wait = 0.05
             while wait < 1:
                 try:
                     data = sock.recv(1)
                     break
                 except:
-                    wait += 0.01
+                    wait *= 2
             if wait >= 1:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
@@ -560,13 +560,13 @@ class P2PHashTableClient:
                 data = sock.recv(1)
             except:
                 # TRY AGAIN HERE--FAIL IF NEEDED
-                wait = 0.01
+                wait = 0.05
                 while wait < 1:
                     try:
                         data = sock.recv(1)
                         break
                     except:
-                        wait += 0.01
+                        wait *= 2
                 if wait >= 1:
                     self.fingerTable.delNode(dest_args[1])
                     return {'status': 'failure', 'message': 'destination not responding'}
@@ -588,13 +588,13 @@ class P2PHashTableClient:
                 b = sock.recv(1024)
             except:
                 # TRY AGAIN HERE--FAIL IF NEEDED
-                wait = 0.01
+                wait = 0.05
                 while wait < 1:
                     try:
                         data = sock.recv(1)
                         break
                     except:
-                        wait += 0.01
+                        wait *= 2
                 if wait >= 1:
                     self.fingerTable.delNode(dest_args[1])
                     return {'status': 'failure', 'message': 'destination not responding'}
@@ -606,13 +606,13 @@ class P2PHashTableClient:
             b = sock.recv(leftover)
         except:
             # TRY AGAIN HERE--FAIL IF NEEDED
-            wait = 0.01
+            wait = 0.05
             while wait < 1:
                 try:
                     data = sock.recv(1)
                     break
                 except:
-                    wait += 0.01
+                    wait *= 2
             if wait >= 1:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
