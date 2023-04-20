@@ -215,11 +215,60 @@ class P2PHashTableClient:
     # position: position on the ring where this message is trying to go
     def forwardMessage(self, msg, position):
 
-        from_args = msg['from']
+        while len(self.fingerTable.ft) > 0:
 
-        # find where to send process on finger table
-        pass
+            # find where to send process on finger table
+            proc = self.fingerTable.findProcess(position)
 
+            # check if this is closer than if you send to previous or next
+            dis_ft = abs(proc[0] - position)
+            dis_prev = abs(self.prev[0] - position)
+            dis_next = abs(self.next[0] - position)
+
+            # send with finger table
+            if (dis_ft <= dis_prev) and (dis_ft <= dis_next):
+                res = self.send_msg(msg, proc, True)
+                if (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
+                    continue
+                else:
+                    return True
+
+            # send to previous
+            elif (dis_prev <= dis_ft) and (dis_prev <= dis_next):
+                res = self.send_msg(msg, self.prev, True)
+                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
+                    self.handleCrash(self.prev, 'prev')
+                    res = self.send_msg(msg, self.prev, True)
+                return True
+
+            # send to next
+            else:
+                res = self.send_msg(msg, self.next, True)
+                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
+                    self.handleCrash(self.next, 'next')
+                    res = self.send_msg(msg, self.next, True)
+                return True
+
+        # nothing in finger table, so test next and prev
+        else:
+            dis_prev = abs(self.prev[0] - position)
+            dis_next = abs(self.next[0] - position)
+
+            # send to previous
+            if dis_prev <= dis_next:
+                res = self.send_msg(msg, self.prev, True)
+                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
+                    self.handleCrash(self.prev, 'prev')
+                    res = self.send_msg(msg, self.prev, True)
+                return True
+
+            # send to next
+            else:
+                res = self.send_msg(msg, self.next, True)
+                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
+                    self.handleCrash(self.next, 'next')
+                    res = self.send_msg(msg, self.next, True)
+                return True
 
 
 

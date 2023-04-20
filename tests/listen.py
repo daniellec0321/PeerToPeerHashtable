@@ -13,9 +13,9 @@ print('Listening on port {}...'.format(port))
 
 ht.port = port
 ht.prev = (19, 'student12.cse.nd.edu', 40000)
-ht.next = (19, 'student12.cse.nd.edu', 40000)
-ht.high = 9
-ht.low = 0
+ht.next = (34, 'student12.cse.nd.edu', 40000)
+ht.high = 29
+ht.low = 20
 
 while True:
 
@@ -26,17 +26,5 @@ while True:
 
     print('Received ', end='')
     print(ret)
-    print('Handle an update here')
 
-    msg = {'method': 'acknowledgement'}
-    print('Sending back ', end='')
-    print('CRASH')
-    exit()
-    '''
-    print(msg)
-    json_msg = json.dumps(msg)
-    msg_len = len(json_msg).to_bytes(4, byteorder='big')
-    conn.sendall(msg_len + json_msg.encode())
-
-    conn.close()
-    '''
+    break
