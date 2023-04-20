@@ -211,7 +211,7 @@ class P2PHashTableClient:
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
-                            print(stream)
+                            print('Message Recieved: ', stream)
                             self.parseStream(stream, msg_length)
                                 
             except TimeoutError: #This exception is taken on timeout
@@ -228,24 +228,29 @@ class P2PHashTableClient:
         
         #Two different types of methods--> ack and requests
         
-        
-        if stream['method'] == 'join':
-            #Handle adding node to the ring
-            msg = self.addToRing(stream['from'])
-            #Need to send message back
-            print(self.send_msg(msg, stream['from']))
-        elif stream['method'] == 'updateNext':
-            #Handle updating next node
-            pass
-        elif stream['method'] == 'updatePrev':
-            #Handle updating prev node
-            pass
-        elif stream['method'] == 'updateRange':
-            #Handle updatingRange
-            pass
-        elif stream['method'] == 'ack':
-            #Handle acknowledgement
-            pass
+        if 'method' in stream:
+            if stream['method'] == 'joinReq':
+                #Handle adding node to the ring
+                msg = self.addToRing(stream['from'])
+                #Need to send message back
+                self.send_msg(msg, stream['from'])
+            elif stream['method'] == 'join':
+                self.next = stream['next']
+                self.prev = stream['prev']
+                self.highRange = stream['highRange']
+                self.lowRange = stream['lowRange']
+            elif stream['method'] == 'updateNext':
+                #Handle updating next node
+                pass
+            elif stream['method'] == 'updatePrev':
+                #Handle updating prev node
+                pass
+            elif stream['method'] == 'updateRange':
+                #Handle updatingRange
+                pass
+            elif stream['method'] == 'ack':
+                #Handle acknowledgement
+                pass
         
     def addToRing(self, details):
         #To add node to ring need to hashIP
@@ -277,13 +282,11 @@ class P2PHashTableClient:
             
         #TODO: Adding into ring when there are more than 2 members
                 
-                
-
         #Once you have high Range --> get low range by consulting finger table
         # It will send the new node’s position in the ring, a copy of the process’ finger table, the new node’s previous process, and the new node’s next process
         
         # Need to send back to the node highRange, lowRange, next, prev
-        return {'status': 'success', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange}
+        return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange}
     
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
@@ -440,8 +443,9 @@ class P2PHashTableClient:
 
     def sendJoinRequest(self, dest_args):
         
-        msg = {'method': 'join', 'from': (self.highRange, self.ipAddress, self.port)}
-        ret_msg = self.send_msg(msg, dest_args)
+        msg = {'method': 'joinReq', 'from': (self.highRange, self.ipAddress, self.port)}
+        ret_msg = self.send_msg(msg, dest_args, True)
+        return ret_msg
 
     def sendToNameServer(self):
         #Send an update to the name server describing server
