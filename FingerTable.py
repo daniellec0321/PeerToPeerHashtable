@@ -42,16 +42,25 @@ class FingerTable():
 
 
 
-    def findProcess(self, position):
+    # Overshoot should only be false when handling crashes
+    def findProcess(self, position, overshoot=True):
 
         # Handle empty finger table
         if len(self.ft) <= 0:
             return None
 
         # find the process with a position that is juuuuust higher than the given position and return it
-        for node in self.ft:
-            if node[0] >= position:
-                return node
+        if overshoot:
+            for node in self.ft:
+                if node[0] >= position:
+                    return node
+            # if could not find node, then just return first one
+            return self.ft[0]
 
-        # if could not find one, then return the first node in the list
-        return self.ft[0]
+        # find process that is juuuuust below the position. Used for crashes
+        else:
+            for node in reversed(self.ft):
+                if node[0] <= position:
+                    return node
+            # if could not find node, then just return last one
+            return self.ft[-1]
