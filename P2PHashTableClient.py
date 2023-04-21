@@ -383,6 +383,8 @@ class P2PHashTableClient:
                 self.prev = stream['prev']
                 self.highRange = stream['highRange']
                 self.lowRange = stream['lowRange']
+                # JSON dumps converts [()] to [[]] --> need to convert
+                stream['ft'] = [tuple(x) for x in stream['ft']]
                 self.fingerTable.ft = stream['ft']
                 
                 self.fingerTable.addNode(stream['from'])
@@ -451,7 +453,6 @@ class P2PHashTableClient:
             return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
         
         else:
-            print("NO")
             return False
             
         #TODO: Adding into ring when there are more than 2 members
@@ -465,15 +466,19 @@ class P2PHashTableClient:
     def consultFingerTable(self, position, msg):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
+        print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
+        
         #FIRST SEE IF YOU ARE RESPONSIBLE
         if self.highRange < self.lowRange:
+            print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
-            if self.highRange <= position <= 0:
+            if 0 <= position <= self.highRange:
                 return True
-            elif 0 <= position <= self.lowRange:
+            elif self.lowRange <= position <= 2 * math.pi:
                 return True
             else:
-                return False
+                if self.forwardMessage(msg,position):
+                    return False
             
         elif self.lowRange <= position <= self.highRange:
                 return True
