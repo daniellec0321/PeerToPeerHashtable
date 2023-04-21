@@ -548,12 +548,13 @@ class P2PHashTableClient:
         
         # Max Hash for djb2 is 2^32 - 1
         # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
-        ratio = hashedIP / (pow(2,32) - 1)
+        # ratio = hashedIP / (pow(2,32) - 1)
         
         #Multiply ratio by 2pi radians to find its exact spot on the ring
-        location = ratio * 2 * math.pi
+        # location = ratio * 2 * math.pi
         
-        highRange = location
+        # highRange = location
+        highRange = hashedIP
         
         #If fingertable is empty, then this is the second node joining so can just add to it
         if self.consultFingerTable(highRange,msg):
@@ -610,7 +611,7 @@ class P2PHashTableClient:
         
         # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
 
-        print('now in consult finger table')
+        print('now in consult finger table. Max is {}'.format(2 * math.pi))
         
         #FIRST SEE IF YOU ARE RESPONSIBLE
         if self.highRange < self.lowRange:
@@ -666,6 +667,8 @@ class P2PHashTableClient:
             #Self entered to try and diversify ip hashes
             a = a * (int(key[0]) + 1) * (int(key[-1]) * 9999 + 1 )
             a = a % (pow(2,32) - 1)
+            a = a / (pow(2, 32) - 1)
+            a = a * 2 * math.pi
             return a
 
         except: #Catch non strings and record as errors
