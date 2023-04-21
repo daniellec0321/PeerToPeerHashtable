@@ -25,6 +25,19 @@ class P2PHashTableClient:
         self.projectName = None # project name to find in naming service
 
         # TODO: run enter ring here
+
+    def __del__(self):
+        self.leaveRing()
+
+    def leaveRing(self):
+
+        # send update next to previous
+        self.sendUpdateNext(self.next, self.prev)
+
+        # send update prev to next
+        self.sendUpdatePrev(self.prev, self.next)
+
+        # perform a bunch of send inserts
     
     def enterRing(self, projectName):
         # To enter ring, need to check naming service to verify there is or isn't an existing client
@@ -492,8 +505,8 @@ class P2PHashTableClient:
         except:
             # try 5 times, then send failure
             success = False
-            wait = 0.05
-            while wait <= 0.8:
+            wait = 0.01
+            while wait <= 0.1:
                 time.sleep(wait)
                 try:
                     sock.connect((dest_args[1], dest_args[2]))
@@ -501,7 +514,7 @@ class P2PHashTableClient:
                     break
                 except:
                     pass
-                wait *= 2
+                wait += 0.01
             # handle a failure to respond
             if success == False:
                 self.fingerTable.delNode(dest_args[1])
@@ -515,8 +528,8 @@ class P2PHashTableClient:
         except:
             # try 5 times, then send failure
             success = False
-            wait = 0.05
-            while wait <= 0.8:
+            wait = 0.01
+            while wait <= 0.1:
                 time.sleep(wait)
                 try:
                     sock.sendall(msg_length + json_msg.encode())
@@ -524,7 +537,7 @@ class P2PHashTableClient:
                     break
                 except:
                     pass
-                wait *= 2
+                wait += 0.01
             # handle a failure to respond
             if success == False:
                 self.fingerTable.delNode(dest_args[1])
@@ -542,8 +555,8 @@ class P2PHashTableClient:
         except:
             # try 5 times, then send failure
             success = False
-            wait = 0.05
-            while wait <= 0.8:
+            wait = 0.01
+            while wait <= 0.1:
                 time.sleep(wait)
                 try:
                     msg_length = int.from_bytes(sock.recv(4), byteorder='big')
@@ -553,7 +566,7 @@ class P2PHashTableClient:
                     break
                 except:
                     pass
-                wait *= 2
+                wait += 0.01
             # handle a failure to respond
             if success == False:
                 self.fingerTable.delNode(dest_args[1])
