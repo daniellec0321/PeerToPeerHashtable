@@ -28,17 +28,12 @@ class P2PHashTableClient:
 
     def __del__(self):
         self.leaveRing()
-
-    def leaveRing(self):
-
         # send update next to previous
-        self.sendUpdateNext(self.next, self.prev)
-
-        # send update prev to next
-        self.sendUpdatePrev(self.prev, self.next)
-
+        if self.next[1] != self.ipAddress:
+            self.sendUpdateNext(self.next, self.prev)
+            self.sendUpdatePrev(self.prev, self.next)
         # perform a bunch of send inserts
-    
+
     def enterRing(self, projectName):
         # To enter ring, need to check naming service to verify there is or isn't an existing client
         
