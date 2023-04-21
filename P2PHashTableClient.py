@@ -29,9 +29,10 @@ class P2PHashTableClient:
         # TODO: run enter ring here
 
     def __del__(self):
-        # send update next to previous
+        # send updateNext to previous and updatePrev to next
         if self.next and self.next[1] != self.ipAddress:
             self.sendUpdateNext(self.next, self.prev)
+        if self.prev and self.prev[1] != self.ipAddress:
             self.sendUpdatePrev(self.prev, self.next)
         # perform a bunch of send inserts
         for key in self.ht.hash:
@@ -229,9 +230,16 @@ class P2PHashTableClient:
     # position: position on the ring where this message is trying to go
     def forwardMessage(self, msg, position):
         
-        print("IN")
-        print('FT: ', self.fingerTable.ft)
+        # if FT is empty, then you are the only node in the system--return
+        if len(self.fingerTable.ft) <= 0:
+            return True
 
+        proc = self.fingerTable.findProcess(position)
+        self.send_msg(msg, position)
+
+        return True
+
+        '''
         while len(self.fingerTable.ft) > 0:
 
             # find where to send process on finger table
@@ -290,6 +298,8 @@ class P2PHashTableClient:
                     self.handleCrash(self.next, 'next')
                     res = self.send_msg(msg, self.next, True)
                 return True
+
+    '''
 
 
 
@@ -419,7 +429,12 @@ class P2PHashTableClient:
             elif stream['method'] == 'updateNext':
                 #Handle updating next node --> need to send ack
                 self.next = stream['next']
-                print('Updated Next', self.prev)
+                # print('Updated Next', self.prev)
+                # check if new node is in finger table, if not add it
+                proc = self.fingerTable.findProcess(stream['next'][0])
+                if not proc or proc[1] != stream['next'][1]:
+                    print('here!!!!!')
+                    self.fingerTable.addNode(stream['next'])
                 msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
                 self.send_msg(msg, stream['from'], True)
                 
@@ -427,6 +442,11 @@ class P2PHashTableClient:
                 #Handle updating prev node --> need to send ack
                 self.prev = stream['prev']
                 msg = {'method': 'ack', 'message': 'Successfully updated prev pointer'}
+                # check if new node is in finger table, if not add it
+                proc = self.fingerTable.findProcess(stream['prev'][0])
+                if not proc or proc[1] != stream['prev'][1]:
+                    print('here!!!!!')
+                    self.fingerTable.addNode(stream['prev'])
                 self.send_msg(msg, stream['from'], True)
                 
             elif stream['method'] == 'updateRange':
@@ -476,10 +496,11 @@ class P2PHashTableClient:
         location = ratio * 2 * math.pi
         
         highRange = location
-        
+
         #If fingertable is empty, then this is the second node joining so can just add to it
-        if self.consultFingerTable(highRange,msg):
-            self.fingerTable.addNode((highRange, details[1], details[2]))
+        # if self.consultFingerTable(highRange,msg):
+        if True:
+            self.fingerTable.addNode([highRange, details[1], details[2]])
             
             #After adding finger table, need to get low range by communicating with assigned nextNode which will be who sends you the message
             
@@ -495,6 +516,7 @@ class P2PHashTableClient:
                 self.prev = [highRange, details[1], details[2]]
                 #More than 2 members
                 #Need to update prev next
+                # what the new next should be -> where it's going
                 self.sendUpdateNext([highRange, details[1], details[2]], self.prev)
             else: #2 members
                 self.lowRange = highRange + (1 / pow(2,52) )
@@ -509,7 +531,8 @@ class P2PHashTableClient:
                 self.next = [highRange, details[1], details[2]]
                 
             
-            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
+            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
+            # return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
         
         else:
             return False
@@ -527,11 +550,11 @@ class P2PHashTableClient:
     def consultFingerTable(self, position, msg):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
-        print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
+        # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
         
         #FIRST SEE IF YOU ARE RESPONSIBLE
         if self.highRange < self.lowRange:
-            print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
+            # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
                 return True
