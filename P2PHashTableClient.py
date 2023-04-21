@@ -6,6 +6,7 @@ import select
 import sys
 import time
 from FingerTable import FingerTable
+from HashTable import HashTable
 
 class P2PHashTableClient:
     def __init__(self):
@@ -23,16 +24,18 @@ class P2PHashTableClient:
         self.lowRange = None # lowest radian number client is responsible for
         self.fingerTable = FingerTable() # client's finger table
         self.projectName = None # project name to find in naming service
+        self.ht = HashTable()
 
         # TODO: run enter ring here
 
     def __del__(self):
-        self.leaveRing()
         # send update next to previous
-        if self.next[1] != self.ipAddress:
+        if self.next and self.next[1] != self.ipAddress:
             self.sendUpdateNext(self.next, self.prev)
             self.sendUpdatePrev(self.prev, self.next)
         # perform a bunch of send inserts
+        for key in self.ht.hash:
+            print('{}: {}'.format(key, self.ht.hash[key]))
 
     def enterRing(self, projectName):
         # To enter ring, need to check naming service to verify there is or isn't an existing client
@@ -318,7 +321,18 @@ class P2PHashTableClient:
                         
                         if i == '1':
                             self.sendUpdateNext((1, self.ipAddress, self.port), self.next)
+                        if i == 'insert':
+                            msg = {'method': 'insert', 'key': 'what', 'value': 'bruh', 'from': (self.highRange, self.ipAddress, self.port)}
+                            self.send_msg(msg, self.next)
                             
+                        if i == 'lookup':
+                            msg = {'method': 'lookup', 'key': 'what', 'from': (self.highRange, self.ipAddress, self.port)}
+                            self.send_msg(msg, self.next)
+
+                        if i == 'remove':
+                            msg = {'method': 'remove', 'key': 'what', 'from': (self.highRange, self.ipAddress, self.port)}
+                            self.send_msg(msg, self.next)
+
                         #TODO: Call function that handles user input
                         pass
                         
@@ -417,6 +431,19 @@ class P2PHashTableClient:
                     self.highRange = stream['high']
                     
                 msg = {'method': 'ack', 'message': 'Successfully updated range'}
+                self.send_msg(msg, stream['from'], True)
+
+            elif stream['method'] == 'insert':
+                ret = self.updateHashTable('insert', stream['key'], stream['value'])
+                msg = {'method': 'ack', 'message': 'Successfully inserted value'}
+                self.send_msg(msg, stream['from'], True)
+            elif stream['method'] == 'remove':
+                ret = self.updateHashTable('remove', stream['key'])
+                msg = {'method': 'ack', 'message': 'Successfully removed value'}
+                self.send_msg(msg, stream['from'], True)
+            elif stream['method'] == 'lookup':
+                ret = self.updateHashTable('lookup', stream['key'])
+                msg = {'method': 'ack', 'message': ret}
                 self.send_msg(msg, stream['from'], True)
         
     def addToRing(self, details):
@@ -539,6 +566,7 @@ class P2PHashTableClient:
                 return {'status': 'failure', 'message': 'destination not responding'}
 
         # should receive a message back (unless an acknowledgement)
+        '''
         msg_length = 0
         json_msg = None
         if ack:
@@ -567,9 +595,11 @@ class P2PHashTableClient:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
+        '''
+
         # return
         sock.close()
-        return {'status': 'success', 'message': ret}
+        return {'status': 'success'}
 
 
 
@@ -633,6 +663,21 @@ class P2PHashTableClient:
         nameServer.connect((h, 9097 + 1))
         #Send Desc to name server
         nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
+
+
+
+    def updateHashTable(self, method, key, value=None):
+
+        if method == 'insert':
+            self.ht.insert(key, value)
+            return True
+        elif method == 'lookup':
+            return self.ht.lookup(key)
+        elif method == 'remove':
+            self.ht.remove(key)
+            return True
+        else:
+            return False
 
 
 
