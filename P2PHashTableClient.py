@@ -506,6 +506,7 @@ class P2PHashTableClient:
                 next = [self.highRange, self.ipAddress, self.port]
                 self.prev = [highRange, details[1], details[2]]
             
+            
                 self.next = [highRange, details[1], details[2]]
                 
             
