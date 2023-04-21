@@ -4,10 +4,10 @@ class FingerTable():
         self.ft = list()
 
     def addNode(self, args):
-        # args is a tuple structured as (position, IP_ADDR, port)
+        # args is a list structured as (position, IP_ADDR, port)
         # position is the TOP RANGE of the range
 
-        if not type(args) is tuple:
+        if not type(args) is list:
             return False
 
         # check that node is not already in table

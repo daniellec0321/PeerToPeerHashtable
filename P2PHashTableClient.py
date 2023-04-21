@@ -120,6 +120,9 @@ class P2PHashTableClient:
         
         self.port = self.sock.getsockname()[1]
         
+        self.prev = [self.highRange, self.ipAddress, self.port]
+        self.next = [self.highRange, self.ipAddress, self.port]
+        
         self.sendToNameServer()
         self.readMessages()
 
@@ -127,14 +130,14 @@ class P2PHashTableClient:
     def sanityCheck(self):
 
         # send updatePrev to next
-        prev_args = (self.highRange, self.ipAddress, self.port)
+        prev_args = [self.highRange, self.ipAddress, self.port]
         dest_args = self.next
         ret = self.sendUpdatePrev(prev_args, dest_args)
         if ret == False:
             self.handleCrash(dest_args, 'next')
 
         # send updateNext to prev
-        next_args = (self.highRange, self.ipAddress, self.port)
+        next_args = [self.highRange, self.ipAddress, self.port]
         dest_args = self.prev
         ret = self.sendUpdateNext(next_args, dest_args)
         if ret == False:
@@ -155,7 +158,7 @@ class P2PHashTableClient:
                 # Find crash's next node using finger table
                 crashNextNode = self.findProcess(crash_args, 'next')
                 # Send update prev to crash's next node. The prev will be ourselves.
-                success = self.sendUpdatePrev((self.highRange, self.ipAddress, self.port), crashNextNode)
+                success = self.sendUpdatePrev([self.highRange, self.ipAddress, self.port], crashNextNode)
             # Update our next to be the crash's next node
             self.next = crashNextNode
             # Update our range of values to cover for the crashed node
@@ -168,7 +171,7 @@ class P2PHashTableClient:
                 # Find crash's prev node using finger table
                 crashPrevNode = self.findProcess(crash_args, 'prev')
                 # Send update next to the crash's prev node. The next will be ourselves
-                success = self.sendUpdateNext((self.highRange, self.ipAddress, self.port), crashPrevNode)
+                success = self.sendUpdateNext([self.highRange, self.ipAddress, self.port], crashPrevNode)
             # Update our previous to be the crash's prev node
             self.prev = crashPrevNode
             # Send an update range to crash's prev
@@ -384,7 +387,6 @@ class P2PHashTableClient:
                 self.highRange = stream['highRange']
                 self.lowRange = stream['lowRange']
                 # JSON dumps converts [()] to [[]] --> need to convert
-                stream['ft'] = [tuple(x) for x in stream['ft']]
                 self.fingerTable.ft = stream['ft']
                 
                 self.fingerTable.addNode(stream['from'])
@@ -421,6 +423,12 @@ class P2PHashTableClient:
                     
                 msg = {'method': 'ack', 'message': 'Successfully updated range'}
                 self.send_msg(msg, stream['from'], True)
+                
+            elif stream['method'] == 'getLow':
+                #Just need to return prev info
+                msg = {'method': 'ack', 'prev': self.prev, 'message': 'successfully retrieved prev info'}
+                self.send_msg(msg, stream['from'], True)
+                
         
     def addToRing(self, details, msg):
         #To add node to ring need to hashIP
@@ -439,16 +447,33 @@ class P2PHashTableClient:
         if self.consultFingerTable(highRange,msg):
             self.fingerTable.addNode((highRange, details[1], details[2]))
             
-            #After adding finger table, need to get low range for new node and update your own low range
-            self.lowRange = highRange + (1 / pow(2,52) )
+            #After adding finger table, need to get low range by communicating with assigned nextNode which will be who sends you the message
             
-            lowRange = self.highRange + (1 / pow(2,52))
+            if self.prev != [self.highRange, self.ipAddress, self.port]:
+                self.lowRange = highRange + (1 / pow(2,52) )
+                
+                next = [self.highRange, self.ipAddress, self.port]
+                
+                prev = self.prev
+                
+                lowRange = self.prev[0]
+                
+                self.prev = [highRange, details[1], details[2]]
+                #More than 2 members
+                #Need to update prev next
+                self.sendUpdateNext([highRange, details[1], details[2]], self.prev)
+            else: #2 members
+                self.lowRange = highRange + (1 / pow(2,52) )
+                
+                lowRange = self.highRange + (1 / pow(2,52))
+                
+                #Set next and prev as this node
+                prev = self.prev
+                next = [self.highRange, self.ipAddress, self.port]
+                self.prev = [highRange, details[1], details[2]]
             
-            #Set next and prev as this node
-            prev = (self.highRange, self.ipAddress, self.port)
-            next = (self.highRange, self.ipAddress, self.port)
-            self.prev = (highRange, details[1], details[2])
-            self.next = (highRange, details[1], details[2])
+                self.next = [highRange, details[1], details[2]]
+                
             
             return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
         
@@ -462,6 +487,8 @@ class P2PHashTableClient:
         # It will send the new node’s position in the ring, a copy of the process’ finger table, the new node’s previous process, and the new node’s next process
         
         # Need to send back to the node highRange, lowRange, next, prev
+    
+
     
     def consultFingerTable(self, position, msg):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
@@ -610,7 +637,7 @@ class P2PHashTableClient:
     # dest_args: a tuple containing the arguments of where the message should be sent
     # Returns a boolean of whether the update succeeded or not
     def sendUpdateNext(self, next_args, dest_args):
-        msg = {'method': 'updateNext', 'next': next_args, 'from': (self.highRange, self.ipAddress, self.port)}
+        msg = {'method': 'updateNext', 'next': next_args, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
@@ -621,7 +648,7 @@ class P2PHashTableClient:
     # Returns a boolean of whether the update succeeded or not
     def sendUpdatePrev(self, prev_args, dest_args):
 
-        msg = {'method': 'updatePrev', 'prev': prev_args, 'from': (self.highRange, self.ipAddress, self.port)}
+        msg = {'method': 'updatePrev', 'prev': prev_args, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
@@ -633,7 +660,7 @@ class P2PHashTableClient:
     # Returns a boolean of whether the update succeeded or not
     def sendUpdateRange(self, high, low, dest_args):
 
-        msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': (self.highRange, self.ipAddress, self.port)}
+        msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
@@ -641,7 +668,7 @@ class P2PHashTableClient:
 
     def sendJoinRequest(self, dest_args):
         
-        msg = {'method': 'joinReq', 'from': (self.highRange, self.ipAddress, self.port)}
+        msg = {'method': 'joinReq', 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args, True)
         return ret_msg
 
