@@ -7,6 +7,7 @@ import sys
 import time
 from FingerTable import FingerTable
 from HashTable import HashTable
+import random
 
 class P2PHashTableClient:
     def __init__(self):
@@ -232,8 +233,8 @@ class P2PHashTableClient:
     # position: position on the ring where this message is trying to go
     def forwardMessage(self, msg, position):
         
-        print("IN")
-        print('FT: ', self.fingerTable.ft)
+        # print("IN")
+        # print('FT: ', self.fingerTable.ft)
 
         # check length of finger table
         if len(self.fingerTable.ft) <= 0:
@@ -350,27 +351,17 @@ class P2PHashTableClient:
                         if i == '1':
                             self.sendUpdateNext((1, self.ipAddress, self.port), self.next)
                         elif i[:6] == 'insert':
-                            '''
-                            args = i.rstrip().split()
-                            msg = {'method': 'insert', 'key': args[1], 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
-                            # TODO: Insert to not the next pointer
-                            self.send_msg(msg, self.next)
-                            '''
-                            print('got insert from user! Command is {}'.format(i))
-                            stop = input('stopping...')
                             self.performInsert(userStream=i)
 
                         elif i[:6] == 'lookup':
-                            args = i.rstrip().split()
-                            msg = {'method': 'lookup', 'key': args[1], 'from': [self.highRange, self.ipAddress, self.port]}
-                            # TODO: Insert to not the next pointer
-                            self.send_msg(msg, self.next)
+                            ret = self.performLookup(userStream=i)
+                            if ret['status'] == 'success' and ret['value'] is not None:
+                                print('{}: {}'.format(i.rstrip().split()[1], ret['value']))
+                            if ret['status'] == 'success' and ret['value'] is None:
+                                print('Key {} does not exist in table.'.format(i.rstrip().split()[1]))
 
                         elif i[:6] == 'remove':
-                            args = i.rstrip().split()
-                            msg = {'method': 'remove', 'key': args[1], 'from': [self.highRange, self.ipAddress, self.port]}
-                            # TODO: Insert to not the next pointer
-                            self.send_msg(msg, self.next)
+                            self.performRemove(userStream=i)
 
                         elif i == 'debug':
                             self.debug()
@@ -405,7 +396,7 @@ class P2PHashTableClient:
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
-                            print('Message Recieved: ', stream)
+                            # print('Message Recieved: ', stream)
                             self.conn.close()
                             self.parseStream(stream, msg_length)
                             listen_list.remove(sock)
@@ -450,7 +441,7 @@ class P2PHashTableClient:
                 #Handle updating next node --> need to send ack
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
-                print('Updated Next', self.prev)
+                # print('Updated Next', self.prev)
                 msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
                 self.send_msg(msg, stream['from'], True)
                 
@@ -484,52 +475,42 @@ class P2PHashTableClient:
                 self.send_msg(msg, stream['from'], True)
 
             elif stream['method'] == 'insert':
-                '''
-                ret = self.updateHashTable('insert', stream['key'], stream['value'])
-                msg = {'method': 'ack', 'message': 'Successfully inserted value'}
-                self.send_msg(msg, stream['from'], True)
-                '''
                 self.performInsert(processStream=stream)
 
             elif stream['method'] == 'lookup':
-                ret = self.updateHashTable('lookup', stream['key'])
-                msg = {'method': 'ack', 'message': ret}
-                self.send_msg(msg, stream['from'], True)
+                self.performLookup(processStream=stream)
 
             elif stream['method'] == 'remove':
-                ret = self.updateHashTable('remove', stream['key'])
-                msg = {'method': 'ack', 'message': 'Successfully removed value'}
-                self.send_msg(msg, stream['from'], True)
+                self.performRemove(processStream=stream)
+
+            elif stream['method'] == 'ack':
+                # check if returning from a lookup
+                if stream['message'] == 'Result of lookup' and stream['value'] is not None:
+                    print('{}: {}'.format(stream['key'], stream['value']))
+                elif stream['message'] == 'Result of lookup' and stream['value'] is None:
+                    print('Key {} does not exist in table.'.format(stream['key']))
 
 
 
     def performInsert(self, userStream=None, processStream=None):
 
-        print('now in perform insert')
-
         # Hash given key
         if userStream:
-            print('in the user stream')
-            stop = input('stopping...')
             args = userStream.rstrip().split()
             if len(args) != 3:
+                print('Usage: $ insert [key] [value]')
                 return False
             key = args[1]
             hashedKey = self.hashKey(key)
-            # TODO: make a message
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
                 # perform insert
-                print('Key is {}, hashed key is {}. My range is {} to {}. I am putting the key into my own table.'.format(key, hashedKey, self.lowRange, self.highRange))
-                stop = input('stopping...')
                 return self.updateHashTable('insert', key, args[2])
             else:
                 # message has been successfully forwarded
                 pass
 
         if processStream:
-            print('in the process stream')
-            stop = input('stopping...')
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
@@ -542,7 +523,78 @@ class P2PHashTableClient:
             else:
                 # already been forwarded
                 pass
+
+
+
+    def performLookup(self, userStream=None, processStream=None):
+
+        # Perform lookup has a little bit of different semantics since you can either return the looked up value in the function or wait for it from another process.
+        # Perform lookup will always return a dictionary with a key called 'status'. If status is set to forwarded, then you need to wait get the value from another process. If status is set to 'success', then there will be another element in the dictionary containing the value.
+
+        # lookup request from user
+        if userStream:
+            args = userStream.rstrip().split()
+            if len(args) != 2:
+                print('Usage: $ lookup [key]')
+                msg = {'status': 'failure'}
+                return msg
+            key = args[1]
+            hashedKey = self.hashKey(key)
+            msg = {'method': 'lookup', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+            if self.consultFingerTable(hashedKey, msg):
+                # perform lookup on my own table
+                ret = self.updateHashTable('lookup', key)
+                msg = {'status': 'success', 'value': ret}
+                return msg
+            else:
+                # message has been successfully forwarded
+                return {'status': 'forwarded'}
                 
+        if processStream:
+            hashedKey = self.hashKey(processStream['key'])
+            if self.consultFingerTable(hashedKey, processStream):
+                ret = self.updateHashTable('lookup', processStream['key'])
+                # return ack
+                msg = {'method': 'ack', 'message': 'Result of lookup', 'key': processStream['key'], 'value': ret}
+                self.send_msg(msg, processStream['from'])
+                return {'status': 'returned'}
+            else:
+                # already been forwarded
+                return {'status': 'forwarded'}
+
+
+
+    def performRemove(self, userStream=None, processStream=None):
+        
+        if userStream:
+            args = userStream.rstrip().split()
+            if len(args) != 2:
+                print('Usage: $ remove [key]')
+                return False
+            key = args[1]
+            hashedKey = self.hashKey(key)
+            msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+            if self.consultFingerTable(hashedKey, msg):
+                # perform insert
+                return self.updateHashTable('remove', key)
+            else:
+                # message has been successfully forwarded
+                pass
+
+        if processStream:
+            hashedKey = self.hashKey(processStream['key'])
+            if self.consultFingerTable(hashedKey, processStream):
+                ret = self.updateHashTable('remove', processStream['key'])
+                # return ack
+                if ret:
+                    msg = {'method': 'ack', 'message': 'Successful remove'}
+                else:
+                    msg = {'method': 'ack', 'message': 'Error on removal'}
+                self.send_msg(msg, processStream['from'])
+            else:
+                # already been forwarded
+                pass
+
 
         
     def addToRing(self, details, msg):
@@ -614,39 +666,25 @@ class P2PHashTableClient:
         
         # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
 
-        print('now in consult finger table. Max is {}'.format(2 * math.pi))
-        
         #FIRST SEE IF YOU ARE RESPONSIBLE
         if self.highRange < self.lowRange:
             # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
-                print('Position is {}, my range is from {} to {}. It is returning as my responsibility.'.format(position, self.lowRange, self.highRange))
-                stop = input('stopping...')
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
-                print('Position is {}, my range is from {} to {}. It is returning as my responsibility.'.format(position, self.lowRange, self.highRange))
-                stop = input('stopping...')
                 return True
             else:
-                print('Position is {}, my range is from {} to {}. It is BEING FORWARDED.'.format(position, self.lowRange, self.highRange))
-                stop = input('stopping...')
                 if self.forwardMessage(msg,position):
                     return False
             
         elif self.lowRange <= position <= self.highRange:
-            print('Position is {}, my range is from {} to {}. It is returning as my responsibility.'.format(position, self.lowRange, self.highRange))
-            stop = input('stopping...')
             return True
             
         elif self.lowRange == self.highRange:
-            print('Position is {}, my range is from {} to {}. It is returning as my responsibility.'.format(position, self.lowRange, self.highRange))
-            stop = input('stopping...')
             return True
             
         else:
-            print('Position is {}, my range is from {} to {}. It is BEING FORWARDED.'.format(position, self.lowRange, self.highRange))
-            stop = input('stopping...')
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             if self.forwardMessage(msg,position):
                 return False
@@ -654,7 +692,6 @@ class P2PHashTableClient:
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
         # NOTE: Max Hash -->  2^{32} - 1 = 4,294,967,295
-        # print(key)
         
         #Need to modify hashing algorithm to more evenly distribute these nodes
         
@@ -668,11 +705,20 @@ class P2PHashTableClient:
             a = hashedKey & 0xFFFFFFFF
             
             #Self entered to try and diversify ip hashes
-            a = a * (int(key[0]) + 1) * (int(key[-1]) * 9999 + 1 )
+            key0 = None
+            key1 = None
+            try:
+                key0 = int(key[0])
+            except:
+                key0 = ord(key[0])
+            try:
+                keyn1 = int(key[-1])
+            except:
+                keyn1 = ord(key[-1])
+            a = a * (key0 + 1) * (keyn1 * 9999 + 1 )
             a = a % (pow(2,32) - 1)
             a = a / (pow(2, 32) - 1)
             a = a * 2 * math.pi
-            print('key was {}, hashed key is {}'.format(key, a))
             return a
 
         except: #Catch non strings and record as errors
