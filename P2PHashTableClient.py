@@ -33,6 +33,7 @@ class P2PHashTableClient:
             self.sendUpdatePrev(self.prev, self.next)
         if self.prev and self.prev[1] != self.ipAddress:
             self.sendUpdateNext(self.next, self.prev)
+        # ADD COMMAND FOR AN UPDATE RANGE
         for key in self.ht.hash:
             print('{}: {}'.format(key, self.ht.hash[key]))
     
@@ -330,7 +331,7 @@ class P2PHashTableClient:
             if (curr_time - last_time) > 15:
                 last_time = curr_time
                 # self.sanityCheck()
-                self.debug()
+                # self.debug()
 
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
@@ -370,6 +371,9 @@ class P2PHashTableClient:
                             msg = {'method': 'remove', 'key': args[1], 'from': [self.highRange, self.ipAddress, self.port]}
                             # TODO: Insert to not the next pointer
                             self.send_msg(msg, self.next)
+
+                        elif i == 'debug':
+                            self.debug()
 
                     else:
                         
@@ -508,7 +512,6 @@ class P2PHashTableClient:
             print('in the user stream')
             stop = input('stopping...')
             args = userStream.rstrip().split()
-            stop = input('stopping...')
             if len(args) != 3:
                 return False
             key = args[1]
@@ -669,6 +672,7 @@ class P2PHashTableClient:
             a = a % (pow(2,32) - 1)
             a = a / (pow(2, 32) - 1)
             a = a * 2 * math.pi
+            print('key was {}, hashed key is {}'.format(key, a))
             return a
 
         except: #Catch non strings and record as errors
