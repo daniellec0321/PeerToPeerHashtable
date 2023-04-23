@@ -30,13 +30,18 @@ class P2PHashTableClient:
         # TODO: run enter ring here
 
     def __del__(self):
+        self.highRange = 1001
+        self.lowRange = 1000
         if self.next and self.next[1] != self.ipAddress:
             self.sendUpdatePrev(self.prev, self.next)
+            self.sendUpdateRange(-1, self.lowRange, self.next)
         if self.prev and self.prev[1] != self.ipAddress:
             self.sendUpdateNext(self.next, self.prev)
-        # ADD COMMAND FOR AN UPDATE RANGE
         for key in self.ht.hash:
-            print('{}: {}'.format(key, self.ht.hash[key]))
+            value = self.ht.hash[key]
+            userStream = 'insert {} {}'.format(key, value)
+            self.performInsert(userStream=userStream)
+    
     
     
     def enterRing(self, projectName):
@@ -505,14 +510,18 @@ class P2PHashTableClient:
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
                 # perform insert
+                print('inserted on own hashtable')
                 return self.updateHashTable('insert', key, args[2])
             else:
                 # message has been successfully forwarded
+                print('forwarded to other hashtable')
                 pass
 
         if processStream:
+            print('in process stream')
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
+                print('putting in own hash')
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
                 # return ack
                 if ret:
@@ -521,6 +530,7 @@ class P2PHashTableClient:
                     msg = {'method': 'ack', 'message': 'Error on insertion'}
                 self.send_msg(msg, processStream['from'])
             else:
+                print('forwarding to another hash')
                 # already been forwarded
                 pass
 
@@ -883,6 +893,9 @@ class P2PHashTableClient:
 
     def debug(self):
         print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}')
+        print('my hashtable is:')
+        for key in self.ht.hash:
+            print('{}: {}'.format(key, self.ht.hash[key]))
 
     def updateHashTable(self, method, key, value=None):
 
