@@ -30,19 +30,21 @@ class P2PHashTableClient:
         # TODO: run enter ring here
 
     def __del__(self):
+        # update next node
         if self.next and self.next[1] != self.ipAddress:
             self.sendUpdatePrev(self.prev, self.next)
             self.sendUpdateRange(-1, self.lowRange, self.next)
+        # update previous node
         if self.prev and self.prev[1] != self.ipAddress:
             self.sendUpdateNext(self.next, self.prev)
+        # reset low and high range
         self.highRange = 1001
         self.lowRange = 1000
+        # rebalance data
         if self.next and self.prev and self.next[1] != self.ipAddress and self.prev[1] != self.ipAddress:
             for key in self.ht.hash:
                 value = self.ht.hash[key]
                 userStream = 'insert {} {}'.format(key, value)
-                # print('in del, about to perform insert with argument {}'.format(userStream))
-                # stop = input('stopping...')
                 self.performInsert(userStream=userStream)
     
     
@@ -253,8 +255,6 @@ class P2PHashTableClient:
         # delete yourself to make sure
         self.fingerTable.delNode(self.ipAddress)
         proc = self.fingerTable.findProcess(position)
-        # print('in forward message, sending message to {}'.format(proc))
-        # send message
         self.send_msg(msg, proc, True)
 
         '''
@@ -361,17 +361,17 @@ class P2PHashTableClient:
                         
                         if i == '1':
                             self.sendUpdateNext((1, self.ipAddress, self.port), self.next)
-                        elif i[:6] == 'insert':
+                        elif i.rstrip().split()[0] == 'insert':
                             self.performInsert(userStream=i)
 
-                        elif i[:6] == 'lookup':
+                        elif i.rstrip().split()[0] == 'lookup':
                             ret = self.performLookup(userStream=i)
                             if ret['status'] == 'success' and ret['value'] is not None:
                                 print('{}: {}'.format(i.rstrip().split()[1], ret['value']))
                             if ret['status'] == 'success' and ret['value'] is None:
                                 print('Key {} does not exist in table.'.format(i.rstrip().split()[1]))
 
-                        elif i[:6] == 'remove':
+                        elif i.rstrip().split()[0] == 'remove':
                             self.performRemove(userStream=i)
 
                         elif i == 'debug':
@@ -517,18 +517,14 @@ class P2PHashTableClient:
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
                 # perform insert
-                # print('inserted on own hashtable')
                 return self.updateHashTable('insert', key, args[2])
             else:
                 # message has been successfully forwarded
-                # print('forwarded to other hashtable')
                 pass
 
         if processStream:
-            # print('in perform insert with process stream')
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
-                # print('putting in own hash')
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
                 # return ack
                 if ret:
@@ -537,7 +533,6 @@ class P2PHashTableClient:
                     msg = {'method': 'ack', 'message': 'Error on insertion'}
                 self.send_msg(msg, processStream['from'])
             else:
-                # print('forwarding to another hash')
                 # already been forwarded
                 pass
 
@@ -684,32 +679,24 @@ class P2PHashTableClient:
         # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
 
         #FIRST SEE IF YOU ARE RESPONSIBLE
-        # print('in consult finger table. My range is from {} to {}. The given position is {}'.format(self.lowRange, self.highRange, position))
-        # stop = input('stopping...')
         if self.highRange < self.lowRange:
             # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
-                # print('It is my responsibility')
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
-                # print('It is my responsibility')
                 return True
             else:
-                # print('It is being forwarded')
                 if self.forwardMessage(msg,position):
                     return False
             
         elif self.lowRange <= position <= self.highRange:
-            # print('It is my responsibility')
             return True
             
         elif self.lowRange == self.highRange:
-            # print('It is my responsibility')
             return True
             
         else:
-            # print('It is being forwarded')
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             if self.forwardMessage(msg,position):
                 return False
