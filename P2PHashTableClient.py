@@ -325,6 +325,7 @@ class P2PHashTableClient:
         self.stdinDesc = sys.stdin.fileno()
         
         print(f"Listening on Port {self.sock.getsockname()[1]}")
+        self.usage()
         self.sock.settimeout(60)
         listen_list = [self.sock, self.stdinDesc]
         write_list = []
@@ -354,11 +355,9 @@ class P2PHashTableClient:
                         
                     elif sock == self.stdinDesc:
                         #This flag is set off when there is keyboard input and enter is pressed
-                        i = input()
+                        i = input().lower()
                         
-                        if i == '1':
-                            self.sendUpdateNext((1, self.ipAddress, self.port), self.next)
-                        elif i.rstrip().split()[0] == 'insert':
+                        if i.rstrip().split()[0] == 'insert':
                             self.performInsert(userStream=i)
 
                         elif i.rstrip().split()[0] == 'lookup':
@@ -373,6 +372,12 @@ class P2PHashTableClient:
 
                         elif i == 'debug':
                             self.debug()
+                            
+                        elif i == 'usage':
+                            self.usage()
+                            
+                        elif i == 'exit':
+                            sys.exit(0)
 
                     else:
                         
@@ -420,8 +425,6 @@ class P2PHashTableClient:
         if msg_length != len(str(stream)):
             #Encountered malformed stream
             return False
-        
-        print(stream)
         
         #Two different types of methods--> ack and requests
         
@@ -933,6 +936,13 @@ class P2PHashTableClient:
         print('my hashtable is:')
         for key in self.ht.hash:
             print('{}: {}'.format(key, self.ht.hash[key]))
+            
+    def usage(self):
+        print('\nP2PHashTable Usage:')
+        print('  Insert [key] [value]')
+        print('  Lookup [key]')
+        print('  Remove [key]')
+        print('  Exit/Ctrl-c to quit\n')
 
     def updateHashTable(self, method, key, value=None):
 
