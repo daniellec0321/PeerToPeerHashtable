@@ -355,28 +355,28 @@ class P2PHashTableClient:
                         
                     elif sock == self.stdinDesc:
                         #This flag is set off when there is keyboard input and enter is pressed
-                        i = input().lower()
+                        i = input()
                         
-                        if i.rstrip().split()[0] == 'insert':
+                        if i.rstrip().split()[0].lower() == 'insert':
                             self.performInsert(userStream=i)
 
-                        elif i.rstrip().split()[0] == 'lookup':
+                        elif i.rstrip().split()[0].lower() == 'lookup':
                             ret = self.performLookup(userStream=i)
                             if ret['status'] == 'success' and ret['value'] is not None:
                                 print('{}: {}'.format(i.rstrip().split()[1], ret['value']))
                             if ret['status'] == 'success' and ret['value'] is None:
                                 print('Key {} does not exist in table.'.format(i.rstrip().split()[1]))
 
-                        elif i.rstrip().split()[0] == 'remove':
+                        elif i.rstrip().split()[0].lower() == 'remove':
                             self.performRemove(userStream=i)
 
-                        elif i == 'debug':
+                        elif i.lower() == 'debug':
                             self.debug()
                             
-                        elif i == 'usage':
+                        elif i.lower() == 'usage':
                             self.usage()
                             
-                        elif i == 'exit':
+                        elif i.lower() == 'exit':
                             sys.exit(0)
 
                     else:
@@ -529,9 +529,16 @@ class P2PHashTableClient:
                 # check if returning from a lookup
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
                     print('{}: {}'.format(stream['key'], stream['value']))
+                elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
+                    #TODO: Check next node to see if key is there
+                    msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
+                    self.send_msg(msg,stream['next'])
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None:
                     print('Key {} does not exist in table.'.format(stream['key']))
                 
+
+                    
+                    
 
 
 
@@ -546,7 +553,7 @@ class P2PHashTableClient:
                 return False
             key = args[1]
             hashedKey = self.hashKey(key)
-            msg = {'method': 'insert', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
+            msg = {'method': 'insert', 'key': key, 'value': args[2], 'next': False, 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
                 # perform insert --> also need to send message to next
                 msg = {'method': 'insertCopy', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
@@ -589,7 +596,7 @@ class P2PHashTableClient:
                 return msg
             key = args[1]
             hashedKey = self.hashKey(key)
-            msg = {'method': 'lookup', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+            msg = {'method': 'lookup', 'key': key, 'next': self.next, 'triedNext': False, 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
                 # perform lookup on my own table
                 ret = self.updateHashTable('lookup', key)
@@ -605,6 +612,9 @@ class P2PHashTableClient:
                 ret = self.updateHashTable('lookup', processStream['key'])
                 # return ack
                 msg = {'method': 'ack', 'message': 'Result of lookup', 'key': processStream['key'], 'value': ret}
+                if processStream['triedNext'] == False:
+                    msg['next'] = self.next
+                    
                 self.send_msg(msg, processStream['from'])
                 return {'status': 'returned'}
             else:
