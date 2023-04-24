@@ -338,10 +338,21 @@ class P2PHashTableClient:
             exit()
 
         # get where to send the process
-        # delete yourself to make sure
-        self.fingerTable.delNode(self.ipAddress)
-        proc = self.fingerTable.findProcess(position)
-        self.send_msg(msg, proc, True)
+        while len(self.fingerTable.ft) > 0:
+            proc = self.fingerTable.findProcess(position)
+            ret = self.send_msg(msg, proc, True)
+            # try again if needed
+            if ret['status'] == 'failure':
+                print('send didn\'t work, retrying')
+                continue
+            else:
+                break
+        else:
+            # you are the only one in the ring, return failure
+            return False
+
+        # successfully sent message, return True
+        return True
 
         '''
 
@@ -818,8 +829,17 @@ class P2PHashTableClient:
         
         # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
 
+        # delete yourself, add your previous and next to finger table
+        self.fingerTable.addNode(self.next)
+        self.fingerTable.addNode(self.prev)
+        self.fingerTable.delNode(self.ipAddress)
+
+        # if finger table is empty, then you are responsible
+        if len(self.fingerTable.ft) <= 0:
+            return True
+
         #FIRST SEE IF YOU ARE RESPONSIBLE
-        if self.highRange < self.lowRange:
+        elif self.highRange < self.lowRange:
             # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
@@ -827,8 +847,9 @@ class P2PHashTableClient:
             elif self.lowRange <= position <= 2 * math.pi:
                 return True
             else:
-                if self.forwardMessage(msg,position):
-                    return False
+                # if self.forwardMessage(msg,position):
+                    # return False
+                return not self.forwardMessage(msg, position)
             
         elif self.lowRange <= position <= self.highRange:
             return True
@@ -838,8 +859,9 @@ class P2PHashTableClient:
             
         else:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
-            if self.forwardMessage(msg,position):
-                return False
+            return not self.forwardMessage(msg, position)
+            # if self.forwardMessage(msg,position):
+                # return False
     
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
@@ -889,6 +911,10 @@ class P2PHashTableClient:
         # msg MUST be a dictionary already ready for sending
         if not type(msg) is dict:
             return {'status': 'failure', 'message': 'message sent to function was not a dictionary'}
+
+        # if destargs is none, return failure
+        if not dest_args:
+            return {'status': 'failure', 'message': 'dest_args not specified'}
 
         # connect to destination
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
