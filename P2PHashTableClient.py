@@ -243,9 +243,6 @@ class P2PHashTableClient:
     # position: position on the ring where this message is trying to go
     def forwardMessage(self, msg, position):
         
-        # print("IN")
-        # print('FT: ', self.fingerTable.ft)
-
         # check length of finger table
         if len(self.fingerTable.ft) <= 0:
             print('something is wrong!!!!!!!')
@@ -424,6 +421,8 @@ class P2PHashTableClient:
             #Encountered malformed stream
             return False
         
+        print(stream)
+        
         #Two different types of methods--> ack and requests
         
         if 'method' in stream:
@@ -487,6 +486,15 @@ class P2PHashTableClient:
 
             elif stream['method'] == 'insert':
                 self.performInsert(processStream=stream)
+                
+            elif stream['method'] == 'insertCopy':
+                ret = self.updateHashTable('insert', stream['key'], stream['value'])
+                if ret:
+                    msg = {'method': 'ack', 'message': 'Successful insert of copy'}
+                else:
+                    msg = {'method': 'ack', 'message': 'Error on insertion of copy'}
+                    
+                self.send_msg(msg, stream['from'])
 
             elif stream['method'] == 'lookup':
                 self.performLookup(processStream=stream)
@@ -516,7 +524,9 @@ class P2PHashTableClient:
             hashedKey = self.hashKey(key)
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
-                # perform insert
+                # perform insert --> also need to send message to next
+                msg = {'method': 'insertCopy', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
                 return self.updateHashTable('insert', key, args[2])
             else:
                 # message has been successfully forwarded
@@ -526,6 +536,8 @@ class P2PHashTableClient:
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
+                msg = {'method': 'insertCopy', 'key': processStream['key'], 'value': processStream['value'], 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
                 # return ack
                 if ret:
                     msg = {'method': 'ack', 'message': 'Successful insert'}
@@ -536,6 +548,7 @@ class P2PHashTableClient:
                 # already been forwarded
                 pass
 
+    
 
 
     def performLookup(self, userStream=None, processStream=None):
