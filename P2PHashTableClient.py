@@ -10,7 +10,7 @@ from HashTable import HashTable
 import random
 
 class P2PHashTableClient:
-    def __init__(self):
+    def __init__(self, clean_exit=True):
         self.ipAddress = None # IP of client --> where it can be reached
         self.port = None # What port the client can be reached at
 
@@ -27,9 +27,13 @@ class P2PHashTableClient:
         self.projectName = None # project name to find in naming service
         self.ht = HashTable()
 
+        self.clean_exit = clean_exit
+
         # TODO: run enter ring here
 
     def __del__(self):
+        if self.clean_exit == False:
+            exit()
         # update next node
         if self.next and self.next[1] != self.ipAddress:
             self.sendUpdatePrev(self.prev, self.next)
@@ -209,7 +213,7 @@ class P2PHashTableClient:
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
                     self.send_msg(msg, processArgs['from'], True)
-                if func['method'] == 'updateRange'
+                if func['method'] == 'updateRange':
                     if func['low'] < 0 and func['high'] > 0:
                         self.highRange = func['high']
                     elif func['low'] > 0 and func['high'] < 0:
@@ -250,7 +254,7 @@ class P2PHashTableClient:
             msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAdress, self.port]}]}
         else:
             # send update prev and range to next process
-            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAdress, self.port]}, {'method': 'updateRange', 'low': self.highRange, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
+            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
         self.consultFingerTable(hashedIP, msg)
         
@@ -458,6 +462,9 @@ class P2PHashTableClient:
 
                         elif i == 'debug':
                             self.debug()
+
+                        elif i == 'sanity check':
+                            self.sanityCheck()
 
                     else:
                         
