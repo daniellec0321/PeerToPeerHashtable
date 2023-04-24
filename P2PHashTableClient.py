@@ -433,6 +433,7 @@ class P2PHashTableClient:
                 #Need to send message back
                 if msg:
                     self.send_msg(msg, stream['from'], True)
+
             elif stream['method'] == 'join':
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
@@ -447,6 +448,25 @@ class P2PHashTableClient:
                 
                 msg = {'method': 'ack', 'message': 'Successfully joined ring'}
                 self.send_msg(msg, stream['from'], True)
+
+                # send a rebalance request to your next
+                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, self.next)
+
+            elif stream['method'] == 'rebalance':
+                # this is telling a process to loop through its current data and rebalance it
+                # keep temporary hashtable
+                temp = dict()
+                for key in self.ht.hash:
+                    # record into temp dictionary
+                    temp[key] = self.ht.lookup(key)
+                # clear dictionary
+                self.ht.hash = dict()
+                # go through temp and reinsert
+                for key in temp:
+                    userStream = 'insert {} {}'.format(key, temp[key])
+                    self.performInsert(userStream=userStream)
+
                 
             elif stream['method'] == 'updateNext':
                 #Handle updating next node --> need to send ack
@@ -500,6 +520,7 @@ class P2PHashTableClient:
                     print('{}: {}'.format(stream['key'], stream['value']))
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None:
                     print('Key {} does not exist in table.'.format(stream['key']))
+                
 
 
 
@@ -643,6 +664,7 @@ class P2PHashTableClient:
                 #More than 2 members
                 #Need to update prev next
                 self.sendUpdateNext([highRange, details[1], details[2]], prev)
+
             else: #2 members
                 self.lowRange = highRange
                 
