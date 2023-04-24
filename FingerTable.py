@@ -28,16 +28,20 @@ class FingerTable():
             return False
 
         # delete node with that address
-        to_delete = -1
+        keep = list()
         for idx, node in enumerate(self.ft):
-            if node[1] == IP_ADDR:
-                to_delete = idx
-                break
+            if node[1] != IP_ADDR:
+                keep.append(idx)
 
-        if to_delete == -1:
+        if len(keep) == len(self.ft):
             return False
 
-        del self.ft[to_delete]
+        temp = list()
+        for idx in keep:
+            temp.append(self.ft[idx])
+
+        self.ft = temp
+
         return True
 
 
