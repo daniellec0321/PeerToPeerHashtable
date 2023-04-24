@@ -624,13 +624,16 @@ class P2PHashTableClient:
                     print('Key {} does not exist in table.'.format(stream['key']))
 
             elif stream['method'] == 'crashAcknowledge':
-                if stream['todo'] == 'updateNextAndRange':
+                print('got crash acknowledge message, stream is {}'.format(stream))
+                if stream['todo'] == 'updatePrevAndRange':
+                    print('updating prev and range')
                     # update next and range
-                    self.next = stream['from']
+                    self.prev = stream['from']
                     self.lowRange = stream['from'][0]
                 else:
+                    print('updating next')
                     # update previous
-                    self.prev = stream['from']
+                    self.next = stream['from']
 
 
 
