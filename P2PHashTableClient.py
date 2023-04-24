@@ -168,13 +168,94 @@ class P2PHashTableClient:
 
 
 
+    def performFindProcess(self, processArgs):
+
+        # processArgs is a json message with this structure:
+            # method: findProcess
+            # prev/next: [position, ipAddress, port] --> should be the arguments of a process that crashed
+            # from: [position, ipAddress, port]
+            # toForward: [{method: updatePrev/Next, args...}, {method: updateRange, args...}, ...] --> instructions to be forwarded
+
+        p = None
+        if 'next' in processArgs:
+            p = 'next'
+        else:
+            p = 'prev'
+
+        # remove this process from finger table
+        self.fingerTable.delNode(processArgs[p])
+
+        # check if the target process is my prev or next
+        if (p == 'next' and processArgs[p][1] == self.next[1]) or (p == 'prev' and processArgs[p][1] == self.prev[1]):
+        # if processArgs['next'][1] == self.next[1]:
+            # need to perform the functions in the thingy
+            for func in processArgs['toForward']:
+                # func is a json msg
+                if func['method'] == 'updateNext':
+                    self.next = func['next']
+                    self.fingerTable.addNode(func['next'])
+                    msg = {}
+                    if p == 'next':
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated next pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
+                    else:
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated next pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
+                    self.send_msg(msg, processArgs['from'], True)
+                if func['method'] == 'updatePrev':
+                    self.prev = func['prev']
+                    self.fingerTable.addNode(func['prev'])
+                    msg = {}
+                    if p == 'next':
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
+                    else:
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
+                    self.send_msg(msg, processArgs['from'], True)
+                if func['method'] == 'updateRange'
+                    if func['low'] < 0 and func['high'] > 0:
+                        self.highRange = func['high']
+                    elif func['low'] > 0 and func['high'] < 0:
+                        self.lowRange = func['low']
+                    elif func['low'] > 0 and func['high'] > 0:
+                        self.lowRange = func['low']
+                        self.highRange = func['high']
+                    msg = {}
+                    if p == 'next':
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated range', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
+                    else:
+                        msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated range', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
+                    self.send_msg(msg, processArgs['from'], True)
+                
+        # TODO: forward a message if it is not for you
+        else:
+            hashedIP = self.hashKey(processArgs[p][1])
+            self.consultFingerTable(hashedIP, processArgs)
+
+
+
     # crash_args: the tuple of the destination that crashed
     # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
 
         # TODO: handle the case where there were only two processes in the ring and one of them crashed
+
+        # remove crash_args from fingertable
+        self.fingerTable.delNode(crash_args[1])
+
+        # hash ipaddress to find position
+        hashedIP = self.hashKey(crash_args[1])
+
+        # Different functionalities for whether the crash is next or previous
+        msg = {}
+        if position == 'prev':
+            # send update next to the next process
+            msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAdress, self.port]}]}
+        else:
+            # send update prev and range to next process
+            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAdress, self.port]}, {'method': 'updateRange', 'low': self.highRange, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
+
+        self.consultFingerTable(hashedIP, msg)
         
         # If the process that crashed is the next:
+        '''
         if position == 'next':
             success = False
             while success == False:
@@ -201,12 +282,15 @@ class P2PHashTableClient:
             self.fingerTable.addNode(crashPrevNode)
             # Send an update range to crash's prev
             success = self.sendUpdateRange(crash_args[0], -1, crashPrevNode)
+        '''
 
 
 
     # This function tries to find the adjacent process to a destination. In this function, we are assuming we cannot talk to the destination
     # dest_args: tuple containing the silent destination
     # position: a string that is either 'prev' or 'next' and references which relative process we're trying to locate
+    # Completely cringe function
+    ''''
     def findProcess(self, dest_args, position):
 
         # check if the dest args are your position
@@ -235,6 +319,7 @@ class P2PHashTableClient:
 
             # for now, assume we found process
             return process
+    '''
 
 
 
@@ -466,6 +551,8 @@ class P2PHashTableClient:
                     userStream = 'insert {} {}'.format(key, temp[key])
                     self.performInsert(userStream=userStream)
 
+            elif stream['method'] == 'findProcess':
+                self.performFindProcess(stream)
                 
             elif stream['method'] == 'updateNext':
                 #Handle updating next node --> need to send ack
@@ -528,7 +615,15 @@ class P2PHashTableClient:
                     print('{}: {}'.format(stream['key'], stream['value']))
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None:
                     print('Key {} does not exist in table.'.format(stream['key']))
-                
+
+            elif stream['method'] == 'crashAcknowledge':
+                if stream['todo'] == 'updateNextAndRange':
+                    # update next and range
+                    self.next = stream['from']
+                    self.lowRange = stream['from'][0]
+                else:
+                    # update previous
+                    self.prev = stream['from']
 
 
 
