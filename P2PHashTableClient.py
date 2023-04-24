@@ -9,6 +9,8 @@ from FingerTable import FingerTable
 from HashTable import HashTable
 import random
 
+UNIT = 1.0 / pow(2, 32)
+
 class P2PHashTableClient:
     def __init__(self, clean_exit=True):
         self.ipAddress = None # IP of client --> where it can be reached
@@ -189,6 +191,8 @@ class P2PHashTableClient:
         # remove this process from finger table
         self.fingerTable.delNode(processArgs[p])
 
+        print('in perform find process, processArgs are {}'.format(processArgs))
+
         # check if the target process is my prev or next
         if (p == 'next' and processArgs[p][1] == self.next[1]) or (p == 'prev' and processArgs[p][1] == self.prev[1]):
         # if processArgs['next'][1] == self.next[1]:
@@ -196,6 +200,7 @@ class P2PHashTableClient:
             for func in processArgs['toForward']:
                 # func is a json msg
                 if func['method'] == 'updateNext':
+                    print('updating my next pointer to {}'.format(func['next']))
                     self.next = func['next']
                     self.fingerTable.addNode(func['next'])
                     msg = {}
@@ -239,7 +244,13 @@ class P2PHashTableClient:
     # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
 
-        # TODO: handle the case where there were only two processes in the ring and one of them crashed
+        # case where there is only 1 node in the ring
+        if not self.next or not self.prev or self.next[1] == self.prev[1] or self.next[1] == self.ipAddress or self.prev[1] == self.ipAddress:
+            self.lowRange = self.highRange
+            self.next = [self.highRange, self.ipAddress, self.port]
+            self.prev = [self.highRange, self.ipAddress, self.port]
+            self.fingerTable.ft = list()
+            return
 
         # remove crash_args from fingertable
         self.fingerTable.delNode(crash_args[1])
@@ -250,13 +261,16 @@ class P2PHashTableClient:
         # Different functionalities for whether the crash is next or previous
         msg = {}
         if position == 'prev':
+            print('HEEEEEEERE!!!')
+            stop = input('stopping...')
             # send update next to the next process
-            msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAdress, self.port]}]}
+            msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}]}
         else:
             # send update prev and range to next process
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
-        self.consultFingerTable(hashedIP, msg)
+        if self.consultFingerTable(hashedIP, msg):
+            print('didnt forward message?')
         
         # If the process that crashed is the next:
         '''
@@ -829,6 +843,9 @@ class P2PHashTableClient:
         
         # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
 
+        print('in consult finger table. position is {}, msg is {}. My range is from {} to {}, and my finger table is {}'.format(position, msg, self.lowRange, self.highRange, self.fingerTable.ft))
+        stop = input('stopping...')
+
         # delete yourself, add your previous and next to finger table
         self.fingerTable.addNode(self.next)
         self.fingerTable.addNode(self.prev)
@@ -836,6 +853,7 @@ class P2PHashTableClient:
 
         # if finger table is empty, then you are responsible
         if len(self.fingerTable.ft) <= 0:
+            print('empty finger table, returning true')
             return True
 
         #FIRST SEE IF YOU ARE RESPONSIBLE
@@ -843,22 +861,28 @@ class P2PHashTableClient:
             # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
+                print('within my range, returning true')
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
+                print('within my range, returning true')
                 return True
             else:
                 # if self.forwardMessage(msg,position):
                     # return False
+                print('not my range, returning forward message')
                 return not self.forwardMessage(msg, position)
             
         elif self.lowRange <= position <= self.highRange:
+            print('within my range, returning true')
             return True
             
         elif self.lowRange == self.highRange:
+            print('within my range, returning true')
             return True
             
         else:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
+            print('not my range, returning forward message')
             return not self.forwardMessage(msg, position)
             # if self.forwardMessage(msg,position):
                 # return False
