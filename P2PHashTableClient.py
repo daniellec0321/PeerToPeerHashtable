@@ -30,6 +30,7 @@ class P2PHashTableClient:
         self.ht = HashTable()
 
         self.clean_exit = clean_exit
+        self.TEMP = dict()
 
         # TODO: run enter ring here
 
@@ -262,8 +263,7 @@ class P2PHashTableClient:
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
         if self.consultFingerTable(hashedIP, msg):
-            print('An error occurred.')
-            sys.exit(0)
+            pass
 
 
 
@@ -394,7 +394,6 @@ class P2PHashTableClient:
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
-                            # print('Message Recieved: ', stream)
                             self.conn.close()
                             self.parseStream(stream, msg_length)
                             listen_list.remove(sock)
@@ -415,6 +414,15 @@ class P2PHashTableClient:
         
         if 'method' in stream:
             if stream['method'] == 'joinReq':
+
+                # TODO: remove everything from hashtable and put into temporary dictionary
+                self.TEMP = dict()
+                for key in self.ht.hash:
+                    self.TEMP[key] = self.ht.hash[key]
+                for key in self.TEMP:
+                    userStream = 'remove {}'.format(key)
+                    self.performRemove(userStream=userStream)
+
                 #Handle adding node to the ring
                 msg = self.addToRing(stream['from'], stream)
                 #Need to send message back
@@ -422,7 +430,6 @@ class P2PHashTableClient:
                     self.send_msg(msg, stream['from'], True)
 
             elif stream['method'] == 'join':
-                print('in method join')
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
                 self.prev = stream['prev']
@@ -443,28 +450,10 @@ class P2PHashTableClient:
 
             elif stream['method'] == 'rebalance':
                 # this is telling a process to loop through its current data and rebalance it
-                # keep temporary hashtable
-                print('in rebalance')
-                temp = dict()
-                for key in self.ht.hash:
-                    # record into temp dictionary
-                    temp[key] = self.ht.lookup(key)
-                    # userStream = 'remove {}'.format(key)
-                    # self.performRemove(userStream=userStream)
-                # clear dictionary
-                print('temporary dictionary is {}'.format(temp))
-                # stop = input('stopping...')
-                for key in temp:
-                    userStream = 'remove {}'.format(key)
-                    self.performRemove(userStream=userStream)
-                # self.ht.hash = dict()
-                # go through temp and reinsert
-                for key in temp:
-                    userStream = 'insert {} {}'.format(key, temp[key])
+                for key in self.TEMP:
+                    userStream = 'insert {} {}'.format(key, self.TEMP[key])
                     self.performInsert(userStream=userStream)
-                print('new hash table is')
-                print(self.ht.hash)
-                # stop = input('stopping')
+                self.TEMP = dict()
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -473,7 +462,6 @@ class P2PHashTableClient:
                 #Handle updating next node --> need to send ack
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
-                # print('Updated Next', self.prev)
                 msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
                 self.send_msg(msg, stream['from'], True)
                 
@@ -554,7 +542,6 @@ class P2PHashTableClient:
             if len(args) != 3:
                 print('Usage: $ insert [key] [value]')
                 return False
-            print('attempting to insert {} {}'.format(args[1], args[2]))
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'next': False, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -568,7 +555,6 @@ class P2PHashTableClient:
                 pass
 
         if processStream:
-            print('attempting to insert {} {}'.format(processStream['key'], processStream['value']))
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
@@ -635,7 +621,6 @@ class P2PHashTableClient:
             if len(args) != 2:
                 print('Usage: $ remove [key]')
                 return False
-            print('attempting to remove {}'.format(args[1]))
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -651,17 +636,7 @@ class P2PHashTableClient:
 
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
-            print('attempting to remove {}'.format(processStream['key']))
             if self.consultFingerTable(hashedKey, processStream):
-                '''
-                ret = self.updateHashTable('remove', processStream['key'])
-                # return ack
-                if ret:
-                    msg = {'method': 'ack', 'message': 'Successful remove'}
-                else:
-                    msg = {'method': 'ack', 'message': 'Error on removal'}
-                self.send_msg(msg, processStream['from'])
-                '''
                 ret = self.updateHashTable('remove', processStream['key'])
                 msg = {'method': 'removeCopy', 'key': processStream['key'], 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg,self.next)
@@ -743,40 +718,25 @@ class P2PHashTableClient:
 
         # if finger table is empty, then you are responsible
         if len(self.fingerTable.ft) <= 0:
-            print('finger table is empty, i\'m responsible')
-            # stop = input('stopping...')
-
             return True
 
         #FIRST SEE IF YOU ARE RESPONSIBLE
         elif self.highRange < self.lowRange:
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
-                print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
-                # stop = input('stopping...')
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
-                print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
-                # stop = input('stopping...')
                 return True
             else:
-                print('position is {}, my range is {} to {}. i\'m not responsible'.format(position, self.lowRange, self.highRange))
-                # stop = input('stopping...')
                 return not self.forwardMessage(msg, position)
             
         elif self.lowRange <= position <= self.highRange:
-            print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
-            # stop = input('stopping...')
             return True
             
         elif self.lowRange == self.highRange:
-            print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
-            # stop = input('stopping...')
             return True
             
         else:
-            print('position is {}, my range is {} to {}. i\'m not responsible'.format(position, self.lowRange, self.highRange))
-            # stop = input('stopping...')
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             return not self.forwardMessage(msg, position)
     
