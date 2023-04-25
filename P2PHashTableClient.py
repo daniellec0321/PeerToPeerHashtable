@@ -504,6 +504,14 @@ class P2PHashTableClient:
             elif stream['method'] == 'remove':
                 self.performRemove(processStream=stream)
 
+            elif stream['method'] == 'removeCopy':
+                ret = self.updateHashTable('remove', stream['key'])
+                if ret:
+                    msg = {'method': 'ack', 'message': 'Successful removal of copy'}
+                else:
+                    msg = {'method': 'ack', 'message': 'Error on removal of copy'}    
+                self.send_msg(msg, stream['from'])
+
             elif stream['method'] == 'ack':
                 # check if returning from a lookup
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
@@ -617,8 +625,11 @@ class P2PHashTableClient:
             hashedKey = self.hashKey(key)
             msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
-                # perform insert
-                return self.updateHashTable('remove', key)
+                # perform remove
+                ret = self.updateHashTable('remove', key)
+                msg = {'method': 'removeCopy', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
+                return ret
             else:
                 # message has been successfully forwarded
                 pass
@@ -626,7 +637,18 @@ class P2PHashTableClient:
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
+                '''
                 ret = self.updateHashTable('remove', processStream['key'])
+                # return ack
+                if ret:
+                    msg = {'method': 'ack', 'message': 'Successful remove'}
+                else:
+                    msg = {'method': 'ack', 'message': 'Error on removal'}
+                self.send_msg(msg, processStream['from'])
+                '''
+                ret = self.updateHashTable('remove', processStream['key'])
+                msg = {'method': 'removeCopy', 'key': processStream['key'], 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
                 # return ack
                 if ret:
                     msg = {'method': 'ack', 'message': 'Successful remove'}
