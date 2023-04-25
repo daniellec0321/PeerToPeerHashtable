@@ -438,25 +438,33 @@ class P2PHashTableClient:
                 self.send_msg(msg, stream['from'], True)
 
                 # send a rebalance request to your next
-                print('In method join. Sending a rebalance request to {}'.format(self.next))
-                self.debug()
-                stop = input('stopping...')
                 msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, self.next)
 
             elif stream['method'] == 'rebalance':
                 # this is telling a process to loop through its current data and rebalance it
                 # keep temporary hashtable
+                print('in rebalance')
                 temp = dict()
                 for key in self.ht.hash:
                     # record into temp dictionary
                     temp[key] = self.ht.lookup(key)
+                    # userStream = 'remove {}'.format(key)
+                    # self.performRemove(userStream=userStream)
                 # clear dictionary
-                self.ht.hash = dict()
+                print('temporary dictionary is {}'.format(temp))
+                # stop = input('stopping...')
+                for key in temp:
+                    userStream = 'remove {}'.format(key)
+                    self.performRemove(userStream=userStream)
+                # self.ht.hash = dict()
                 # go through temp and reinsert
                 for key in temp:
                     userStream = 'insert {} {}'.format(key, temp[key])
                     self.performInsert(userStream=userStream)
+                print('new hash table is')
+                print(self.ht.hash)
+                # stop = input('stopping')
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -546,6 +554,7 @@ class P2PHashTableClient:
             if len(args) != 3:
                 print('Usage: $ insert [key] [value]')
                 return False
+            print('attempting to insert {} {}'.format(args[1], args[2]))
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'next': False, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -559,6 +568,7 @@ class P2PHashTableClient:
                 pass
 
         if processStream:
+            print('attempting to insert {} {}'.format(processStream['key'], processStream['value']))
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
@@ -625,6 +635,7 @@ class P2PHashTableClient:
             if len(args) != 2:
                 print('Usage: $ remove [key]')
                 return False
+            print('attempting to remove {}'.format(args[1]))
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -640,6 +651,7 @@ class P2PHashTableClient:
 
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
+            print('attempting to remove {}'.format(processStream['key']))
             if self.consultFingerTable(hashedKey, processStream):
                 '''
                 ret = self.updateHashTable('remove', processStream['key'])
@@ -731,25 +743,40 @@ class P2PHashTableClient:
 
         # if finger table is empty, then you are responsible
         if len(self.fingerTable.ft) <= 0:
+            print('finger table is empty, i\'m responsible')
+            # stop = input('stopping...')
+
             return True
 
         #FIRST SEE IF YOU ARE RESPONSIBLE
         elif self.highRange < self.lowRange:
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
+                print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
+                # stop = input('stopping...')
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
+                print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
+                # stop = input('stopping...')
                 return True
             else:
+                print('position is {}, my range is {} to {}. i\'m not responsible'.format(position, self.lowRange, self.highRange))
+                # stop = input('stopping...')
                 return not self.forwardMessage(msg, position)
             
         elif self.lowRange <= position <= self.highRange:
+            print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
+            # stop = input('stopping...')
             return True
             
         elif self.lowRange == self.highRange:
+            print('position is {}, my range is {} to {}. i\'m responsible'.format(position, self.lowRange, self.highRange))
+            # stop = input('stopping...')
             return True
             
         else:
+            print('position is {}, my range is {} to {}. i\'m not responsible'.format(position, self.lowRange, self.highRange))
+            # stop = input('stopping...')
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             return not self.forwardMessage(msg, position)
     
