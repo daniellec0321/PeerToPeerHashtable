@@ -41,7 +41,7 @@ class P2PHashTableClient:
     def __del__(self):
         print('\nExiting program...')
         if self.clean_exit == False:
-            print('Program finished exiting.')
+            print('Program crashed.')
             return
         # update next node
         if self.next and self.next[1] != self.ipAddress:
@@ -345,7 +345,6 @@ class P2PHashTableClient:
                     
                     self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
                     self.counter += 1
-
                 
                 for sock in read_sockets:
                     
@@ -963,7 +962,6 @@ class P2PHashTableClient:
     def testSystem(self):
         #Prepare arguments to be passed to client
         #
-        
         f = Faker()
         for i in range(50):
             l = [f.name().replace(' ',''), f.name().replace(' ','')]
