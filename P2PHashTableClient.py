@@ -422,6 +422,7 @@ class P2PHashTableClient:
                     self.send_msg(msg, stream['from'], True)
 
             elif stream['method'] == 'join':
+                print('in method join')
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
                 self.prev = stream['prev']
@@ -437,6 +438,9 @@ class P2PHashTableClient:
                 self.send_msg(msg, stream['from'], True)
 
                 # send a rebalance request to your next
+                print('In method join. Sending a rebalance request to {}'.format(self.next))
+                self.debug()
+                stop = input('stopping...')
                 msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, self.next)
 
