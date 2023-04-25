@@ -262,8 +262,7 @@ class P2PHashTableClient:
             # send update prev and range to next process
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
-        if self.consultFingerTable(hashedIP, msg):
-            pass
+        self.consultFingerTable(hashedIP, msg):
 
 
 
