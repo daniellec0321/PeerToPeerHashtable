@@ -35,7 +35,9 @@ class P2PHashTableClient:
         # TODO: run enter ring here
 
     def __del__(self):
+        print('\nExiting program...')
         if self.clean_exit == False:
+            print('Program finished exiting.')
             return
         # update next node
         if self.next and self.next[1] != self.ipAddress:
@@ -53,6 +55,7 @@ class P2PHashTableClient:
                 value = self.ht.hash[key]
                 userStream = 'insert {} {}'.format(key, value)
                 self.performInsert(userStream=userStream)
+        print('Program finished exiting.')
     
     
     
@@ -262,7 +265,7 @@ class P2PHashTableClient:
             # send update prev and range to next process
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
-        self.consultFingerTable(hashedIP, msg):
+        self.consultFingerTable(hashedIP, msg)
 
 
 
@@ -414,7 +417,7 @@ class P2PHashTableClient:
         if 'method' in stream:
             if stream['method'] == 'joinReq':
 
-                # TODO: remove everything from hashtable and put into temporary dictionary
+                # Remove everything from hashtable
                 self.TEMP = dict()
                 for key in self.ht.hash:
                     self.TEMP[key] = self.ht.hash[key]
@@ -426,7 +429,14 @@ class P2PHashTableClient:
                 msg = self.addToRing(stream['from'], stream)
                 #Need to send message back
                 if msg:
+                    # TODO: failure check this send msg
                     self.send_msg(msg, stream['from'], True)
+                else:
+                    # add everything back into hashtable
+                    for key in self.TEMP:
+                        userStream = 'insert {} {}'.format(key, self.TEMP[key])
+                        self.performInsert(userStream=userStream)
+                    self.TEMP = dict()
 
             elif stream['method'] == 'join':
                 self.next = stream['next']
