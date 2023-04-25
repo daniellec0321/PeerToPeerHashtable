@@ -262,74 +262,8 @@ class P2PHashTableClient:
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
         if self.consultFingerTable(hashedIP, msg):
-            print('didnt forward message?')
-        
-        # If the process that crashed is the next:
-        '''
-        if position == 'next':
-            success = False
-            while success == False:
-                # Find crash's next node using finger table
-                crashNextNode = self.findProcess(crash_args, 'next')
-                # Send update prev to crash's next node. The prev will be ourselves.
-                success = self.sendUpdatePrev([self.highRange, self.ipAddress, self.port], crashNextNode)
-            # Update our next to be the crash's next node
-            self.next = crashNextNode
-            self.fingerTable.addNode(crashNextNode)
-            # Update our range of values to cover for the crashed node
-            self.highRange = crash_args[0]
-
-        # If the process that crashed is the prev:
-        elif position == 'prev':
-            success = False
-            while success == False:
-                # Find crash's prev node using finger table
-                crashPrevNode = self.findProcess(crash_args, 'prev')
-                # Send update next to the crash's prev node. The next will be ourselves
-                success = self.sendUpdateNext([self.highRange, self.ipAddress, self.port], crashPrevNode)
-            # Update our previous to be the crash's prev node
-            self.prev = crashPrevNode
-            self.fingerTable.addNode(crashPrevNode)
-            # Send an update range to crash's prev
-            success = self.sendUpdateRange(crash_args[0], -1, crashPrevNode)
-        '''
-
-
-
-    # This function tries to find the adjacent process to a destination. In this function, we are assuming we cannot talk to the destination
-    # dest_args: tuple containing the silent destination
-    # position: a string that is either 'prev' or 'next' and references which relative process we're trying to locate
-    # Completely cringe function
-    ''''
-    def findProcess(self, dest_args, position):
-
-        # check if the dest args are your position
-        if position == 'prev':
-            if (dest_args[1] == self.next[1]) and (dest_args[2] == self.next[2]):
-                return [self.highRange, self.ipAddress, self.port]
-
-            # Contact finger table to find process to contact
-            # Trying to find dest_args previous so need to undershoot
-            ret = self.fingerTable.findProcess(dest_args[0], False)
-
-            # TODO: function to tell a process to find another process
-
-            # for now, assume we found process
-            return process
-
-        else:
-            if (dest_args[1] == self.prev[1]) and (dest_args[2] == self.prev[2]):
-                return [self.highRange, self.ipAddress, self.port]
-
-            # Contact finger table to find process to contact
-            # Trying to find dest_args next so need to overshoot
-            ret = self.fingerTable.findProcess(dest_args[0], True)
-            
-            # TODO: function to tell a process to find another process
-
-            # for now, assume we found process
-            return process
-    '''
+            print('An error occurred.')
+            sys.exit(0)
 
 
 
@@ -340,8 +274,8 @@ class P2PHashTableClient:
         
         # check length of finger table
         if len(self.fingerTable.ft) <= 0:
-            print('something is wrong!!!!!!!')
-            exit()
+            print('An error occurred.')
+            sys.exit(0)
 
         # get where to send the process
         while len(self.fingerTable.ft) > 0:
@@ -359,70 +293,6 @@ class P2PHashTableClient:
         # successfully sent message, return True
         return True
 
-        '''
-
-        while len(self.fingerTable.ft) > 0:
-
-            # find where to send process on finger table
-            proc = self.fingerTable.findProcess(position)
-            print(proc)
-
-            # check if this is closer than if you send to previous or next
-            dis_ft = abs(proc[0] - position)
-            dis_prev = abs(self.prev[0] - position)
-            dis_next = abs(self.next[0] - position)
-
-            # send with finger table
-            if (dis_ft <= dis_prev) and (dis_ft <= dis_next):
-                print('1')
-                res = self.send_msg(msg, proc, True)
-                if (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
-                    continue
-                else:
-                    return True
-
-            # send to previous
-            elif (dis_prev <= dis_ft) and (dis_prev <= dis_next):
-                print('2')
-                res = self.send_msg(msg, self.prev, True)
-                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
-                    self.handleCrash(self.prev, 'prev')
-                    res = self.send_msg(msg, self.prev, True)
-                return True
-
-            # send to next
-            else:
-                print('3')
-                res = self.send_msg(msg, self.next, True)
-                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
-                    self.handleCrash(self.next, 'next')
-                    res = self.send_msg(msg, self.next, True)
-                return True
-
-        # nothing in finger table, so test next and prev
-        else:
-            dis_prev = abs(self.prev[0] - position)
-            dis_next = abs(self.next[0] - position)
-
-            # send to previous
-            if dis_prev <= dis_next:
-                res = self.send_msg(msg, self.prev, True)
-                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
-                    self.handleCrash(self.prev, 'prev')
-                    res = self.send_msg(msg, self.prev, True)
-                return True
-
-            # send to next
-            else:
-                res = self.send_msg(msg, self.next, True)
-                while (res['status'] == 'failure') and (res['message'] == 'destination not responding'):
-                    self.handleCrash(self.next, 'next')
-                    res = self.send_msg(msg, self.next, True)
-                return True
-
-    '''
-
-
 
 
     def readMessages(self):
@@ -437,16 +307,23 @@ class P2PHashTableClient:
         exception_list = []
 
         # variable to keep track of when to do sanity checks
-        last_time = time.time()
+        sanity_last_time = time.time()
+
+        # variable to keep track of sending to name server
+        ns_last_time = time.time()
         
         while True:
 
             # check if 60 seconds have passed and perform sanity check if necessary
-            curr_time = time.time()
-            if (curr_time - last_time) > 15:
-                last_time = curr_time
-                # self.sanityCheck()
-                # self.debug()
+            sanity_curr_time = time.time()
+            if (sanity_curr_time - sanity_last_time) > 5:
+                sanity_last_time = sanity_curr_time
+                self.sanityCheck()
+            
+            ns_curr_time = time.time()
+            if (ns_curr_time - ns_last_time) > 60:
+                ns_last_time = ns_curr_time
+                self.sendToNameServer()
 
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
@@ -647,9 +524,6 @@ class P2PHashTableClient:
                     # update previous
                     self.next = stream['from']
 
-                    
-                    
-
 
 
     def performInsert(self, userStream=None, processStream=None):
@@ -768,15 +642,6 @@ class P2PHashTableClient:
     def addToRing(self, details, msg):
         #To add node to ring need to hashIP
         hashedIP = self.hashKey(details[1])
-        
-        # Max Hash for djb2 is 2^32 - 1
-        # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
-        # ratio = hashedIP / (pow(2,32) - 1)
-        
-        #Multiply ratio by 2pi radians to find its exact spot on the ring
-        # location = ratio * 2 * math.pi
-        
-        # highRange = location
         highRange = hashedIP
         
         #If fingertable is empty, then this is the second node joining so can just add to it
@@ -833,8 +698,6 @@ class P2PHashTableClient:
     def consultFingerTable(self, position, msg):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
-        # print('CHECKING',position, self.highRange, self.lowRange, self.lowRange <= position <= self.highRange)
-
         # delete yourself, add your previous and next to finger table
         self.fingerTable.addNode(self.next)
         self.fingerTable.addNode(self.prev)
@@ -846,7 +709,6 @@ class P2PHashTableClient:
 
         #FIRST SEE IF YOU ARE RESPONSIBLE
         elif self.highRange < self.lowRange:
-            # print('CHECKING',position, self.highRange <= position <= 0, 0 <= position <= self.lowRange)
             #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
                 return True
@@ -963,37 +825,6 @@ class P2PHashTableClient:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
-        '''
-        # should receive a message back (unless an acknowledgement)
-        msg_length = 0
-        json_msg = None
-        if ack:
-            return {'status': 'success', 'message': 'acknowledgement sent'}
-        try:
-            msg_length = int.from_bytes(sock.recv(4), byteorder='big')
-            json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-            ret = json.loads(json_msg)
-        except:
-            # try 5 times, then send failure
-            success = False
-            wait = 0.05
-            while wait <= 0.8:
-                time.sleep(wait)
-                try:
-                    msg_length = int.from_bytes(sock.recv(4), byteorder='big')
-                    json_msg = sock.recv(msg_length).decode() # include a way to test for timeout here
-                    ret = json.loads(json_msg)
-                    success = True
-                    break
-                except:
-                    pass
-                wait *= 2
-            # handle a failure to respond
-            if success == False:
-                self.fingerTable.delNode(dest_args[1])
-                return {'status': 'failure', 'message': 'destination not responding'}
-        '''
-
         # return
         sock.close()
         return {'status': 'success'}
@@ -1050,7 +881,6 @@ class P2PHashTableClient:
         jsonMessage["project"] = self.projectName
         
         jsonMessage = str(json.dumps(jsonMessage))
-
 
         h = socket.gethostbyname("catalog.cse.nd.edu")
         
