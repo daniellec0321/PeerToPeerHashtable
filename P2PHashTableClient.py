@@ -7,6 +7,7 @@ import sys
 import time
 from FingerTable import FingerTable
 from HashTable import HashTable
+from faker import Faker
 import random
 
 UNIT = (2 * math.pi) / pow(2, 32)
@@ -28,6 +29,9 @@ class P2PHashTableClient:
         self.fingerTable = FingerTable() # client's finger table
         self.projectName = None # project name to find in naming service
         self.ht = HashTable()
+        
+        self.testInput = []
+        self.counter = 0
 
         self.clean_exit = clean_exit
         self.TEMP = dict()
@@ -304,6 +308,8 @@ class P2PHashTableClient:
         listen_list = [self.sock, self.stdinDesc]
         write_list = []
         exception_list = []
+        x = 0
+        readTest = False
 
         # variable to keep track of when to do sanity checks
         sanity_last_time = time.time()
@@ -326,6 +332,18 @@ class P2PHashTableClient:
 
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
+                
+                if not read_sockets and x == 0:
+                    x = 1
+                    self.testSystem()
+                    
+                elif not read_sockets and x == 1 and self.counter < 50:
+                    print(f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
+                    
+                    self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
+                    self.counter += 1
+
+                
                 for sock in read_sockets:
                     
                     if sock == self.sock: #MasterSocket ready for reading
@@ -362,7 +380,7 @@ class P2PHashTableClient:
 
                         elif i == 'sanity check':
                             self.sanityCheck()
-
+                            
                     else:
                         
                         #Updates self.conn to be current connection
@@ -393,6 +411,9 @@ class P2PHashTableClient:
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
+
+                            # print('Message Recieved: ', stream)
+                            # print(stream)
                             self.conn.close()
                             self.parseStream(stream, msg_length)
                             listen_list.remove(sock)
@@ -929,6 +950,14 @@ class P2PHashTableClient:
         else:
             return False
 
+    def testSystem(self):
+        #Prepare arguments to be passed to client
+        #
+        
+        f = Faker()
+        for i in range(50):
+            l = [f.name().replace(' ',''), f.name().replace(' ','')]
+            self.testInput.append(l)
 
 if __name__ == '__main__':
     client = P2PHashTableClient()
