@@ -167,8 +167,6 @@ class P2PHashTableClient:
     # check if next and previous are still the next and previous
     def sanityCheck(self):
 
-        print('in sanity check')
-
         # send updatePrev to next
         prev_args = [self.highRange, self.ipAddress, self.port]
         dest_args = self.next
@@ -243,15 +241,16 @@ class P2PHashTableClient:
         # Forward a message if it is not for you
         else:
             hashedIP = self.hashKey(processArgs[p][1])
-            self.consultFingerTable(hashedIP, processArgs)
+            if p == 'next':
+                self.consultFingerTable(hashedIP, processArgs, overshoot=False)
+            else:
+                self.consultFingerTable(hashedIP, processArgs, overshoot=True)
 
 
 
     # crash_args: the tuple of the destination that crashed
     # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
-
-        print('in handle crash')
 
         # case where there is only 1 node in the ring
         if not self.next or not self.prev or self.next[1] == self.prev[1] or self.next[1] == self.ipAddress or self.prev[1] == self.ipAddress:
@@ -284,7 +283,7 @@ class P2PHashTableClient:
     # use finger table or next and prev pointers to take a message to a process
     # msg: dictionary of the message to send
     # position: position on the ring where this message is trying to go
-    def forwardMessage(self, msg, position):
+    def forwardMessage(self, msg, position, overshoot=True):
         
         # check length of finger table
         if len(self.fingerTable.ft) <= 0:
@@ -293,7 +292,7 @@ class P2PHashTableClient:
 
         # get where to send the process
         while len(self.fingerTable.ft) > 0:
-            proc = self.fingerTable.findProcess(position)
+            proc = self.fingerTable.findProcess(position, overshoot)
             ret = self.send_msg(msg, proc, True)
             # try again if needed
             if ret['status'] == 'failure':
@@ -330,13 +329,11 @@ class P2PHashTableClient:
 
         while True:
 
-            # check if 60 seconds have passed and perform sanity check if necessary
-            '''
+            # check if 5 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
             if (sanity_curr_time - sanity_last_time) > 5:
                 sanity_last_time = sanity_curr_time
                 self.sanityCheck()
-            '''
             
             ns_curr_time = time.time()
             if (ns_curr_time - ns_last_time) > 60:
@@ -346,7 +343,6 @@ class P2PHashTableClient:
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
                 
-                '''
                 if not read_sockets and x == 0:
                     x = 1
                     self.testSystem()
@@ -356,7 +352,6 @@ class P2PHashTableClient:
                     
                     self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
                     self.counter += 1
-                '''
                 
                 for sock in read_sockets:
                     
@@ -442,7 +437,6 @@ class P2PHashTableClient:
         #After receiving message need to check that 2 lengths match, then extract fields from stream
         if msg_length != len(str(stream)):
             #Encountered malformed stream
-            print('encountered malformed stream')
             return False
         
         #Two different types of methods--> ack and requests
@@ -450,7 +444,6 @@ class P2PHashTableClient:
         if 'method' in stream:
 
             if stream['method'] == 'rebalance':
-                print('performing a rebalance...')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
@@ -577,7 +570,6 @@ class P2PHashTableClient:
                     # update next
                     self.next = stream['from']
                 # need to rebalance after crash acknowledge
-                print('got crash acknowledge, so doing a rebalance')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
@@ -760,7 +752,7 @@ class P2PHashTableClient:
     
 
     
-    def consultFingerTable(self, position, msg):
+    def consultFingerTable(self, position, msg, overshoot=True):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
         # delete yourself, add your previous and next to finger table
@@ -780,7 +772,7 @@ class P2PHashTableClient:
             elif self.lowRange <= position <= 2 * math.pi:
                 return True
             else:
-                return not self.forwardMessage(msg, position)
+                return not self.forwardMessage(msg, position, overshoot)
             
         elif self.lowRange <= position <= self.highRange:
             return True
@@ -790,7 +782,7 @@ class P2PHashTableClient:
             
         else:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
-            return not self.forwardMessage(msg, position)
+            return not self.forwardMessage(msg, position, overshoot)
     
     def hashKey(self, key):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
