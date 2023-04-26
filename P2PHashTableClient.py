@@ -17,6 +17,8 @@ class P2PHashTableClient:
         self.ipAddress = None # IP of client --> where it can be reached
         self.port = None # What port the client can be reached at
 
+        self.inRing = False
+
         # TODO: where to put open socket connections
         self.sock = None
         self.conn = None
@@ -35,6 +37,7 @@ class P2PHashTableClient:
 
         self.clean_exit = clean_exit
         self.TEMP = dict()
+        self.JOINTEMP = dict()
 
         # TODO: run enter ring here
 
@@ -122,7 +125,7 @@ class P2PHashTableClient:
                 newSock.close()
                 
                 #Gives dest_addr format --> don't have highRange yet
-                return (None, entry['address'], entry['port'])
+                return [None, entry['address'], entry['port']]
                 
             except:
                 #If error --> socket is no longer in ring, so continue to next iteration
@@ -161,6 +164,7 @@ class P2PHashTableClient:
         
         self.prev = [self.highRange, self.ipAddress, self.port]
         self.next = [self.highRange, self.ipAddress, self.port]
+        self.inRing = True
         
         self.sendToNameServer()
         self.readMessages()
@@ -332,7 +336,7 @@ class P2PHashTableClient:
 
             # check if 5 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
-            if (sanity_curr_time - sanity_last_time) > 5:
+            if ((sanity_curr_time - sanity_last_time) > 5) and self.inRing:
                 sanity_last_time = sanity_curr_time
                 self.sanityCheck()
             
@@ -459,8 +463,65 @@ class P2PHashTableClient:
                 msg = {'method': 'ack', 'message': 'Successful rebalance'}
                 self.send_msg(msg, stream['from'], True)
 
+            if stream['method'] == 'joinRebalance':
+                print('performing a rebalance, jointemp is {}'.format(self.JOINTEMP))
+                for key in self.JOINTEMP:
+                    userStream = 'insert {} {}'.format(key, self.JOINTEMP[key])
+                    self.performInsert(userStream=userStream)
+                self.JOINTEMP = dict()
+                # send acknowledge
+                msg = {'method': 'ack', 'message': 'Successful rebalance'}
+                self.send_msg(msg, stream['from'], True)
+
+            elif stream['method'] == 'joinSaveAndRemove':
+                # save all keys and then remove
+                self.JOINTEMP = dict()
+                for key in self.ht.hash:
+                    self.JOINTEMP[key] = self.ht.hash[key]
+                for key in self.JOINTEMP:
+                    userStream = 'remove {}'.format(key)
+                    self.performRemove(userStream=userStream)
+
+                # send acknowledgement
+                toForward = stream['toForward']
+                msg = {'method': 'joinSaveAndRemoveAck', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': toForward}
+
+            elif stream['method'] == 'joinSaveAndRemoveAck':
+                # can now let incoming node join ring
+                s = stream['toForward']
+                msg = self.addToRing(s['from'], s)
+                #Need to send message back
+                if msg:
+                    # TODO: failure check this send msg
+                    self.send_msg(msg, s['from'], True)
+
+
             elif stream['method'] == 'joinReq':
 
+                print('got a join req')
+                # call consult finger table to see if this is your responsibility
+                if self.consultFingerTable(self.hashKey(stream['from'][1]), stream):
+                    print('didnt forward it')
+                    self.JOINTEMP = dict()
+                    for key in self.ht.hash:
+                        self.JOINTEMP[key] = self.ht.hash[key]
+                    # send save and remove message to prev (unless there is only me)
+                    if self.prev and self.prev[1] != self.ipAddress:
+                        print('more than two of us')
+                        # our responsibility, need to do save and remove
+                        for key in self.JOINTEMP:
+                            userStream = 'remove {}'.format(key)
+                            self.performRemove(userStream=userStream)
+                            msg = {'method': 'joinSaveAndRemove', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream}
+                            self.send_msg(msg, self.prev)
+                    else:
+                        print('only two of us')
+                        msg = self.addToRing(stream['from'], stream)
+                        if msg:
+                            self.send_msg(msg, stream['from'])
+
+
+                '''
                 # Remove everything from hashtable
                 print('removing everything from hashtable')
                 self.TEMP = dict()
@@ -480,10 +541,12 @@ class P2PHashTableClient:
                 else:
                     # add everything back into hashtable
                     print('adding everything to hashtable')
+                    # TODO: maybe dont use insert, use DIRECT insert
                     for key in self.TEMP:
                         userStream = 'insert {} {}'.format(key, self.TEMP[key])
                         self.performInsert(userStream=userStream)
                     self.TEMP = dict()
+                '''
 
             elif stream['method'] == 'join':
                 self.next = stream['next']
@@ -500,9 +563,13 @@ class P2PHashTableClient:
                 msg = {'method': 'ack', 'message': 'Successfully joined ring'}
                 self.send_msg(msg, stream['from'], True)
 
-                # send a rebalance request to your next
-                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.inRing = True
+
+                # send a rebalance request to your next and prev
+                msg = {'method': 'joinRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, self.next)
+                msg = {'method': 'joinRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, self.prev)
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
