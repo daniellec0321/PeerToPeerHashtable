@@ -54,6 +54,7 @@ class P2PHashTableClient:
         self.highRange = 1001
         self.lowRange = 1000
         # rebalance data
+        print('im leaving, so sending out data')
         if self.next and self.prev and self.next[1] != self.ipAddress and self.prev[1] != self.ipAddress:
             for key in self.ht.hash:
                 value = self.ht.hash[key]
@@ -343,6 +344,7 @@ class P2PHashTableClient:
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
                 
+                '''
                 if not read_sockets and x == 0:
                     x = 1
                     self.testSystem()
@@ -352,6 +354,7 @@ class P2PHashTableClient:
                     
                     self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
                     self.counter += 1
+                '''
                 
                 for sock in read_sockets:
                     
@@ -444,9 +447,14 @@ class P2PHashTableClient:
         if 'method' in stream:
 
             if stream['method'] == 'rebalance':
+                print('performing a rebalance')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
+                for key in self.TEMP:
+                    userStream = 'insert {} {}'.format(key, self.TEMP[key])
+                    self.performInsert(userStream=userStream)
+                self.TEMP = dict()
                 # send acknowledge
                 msg = {'method': 'ack', 'message': 'Successful rebalance'}
                 self.send_msg(msg, stream['from'], True)
@@ -454,12 +462,14 @@ class P2PHashTableClient:
             elif stream['method'] == 'joinReq':
 
                 # Remove everything from hashtable
+                print('removing everything from hashtable')
                 self.TEMP = dict()
                 for key in self.ht.hash:
                     self.TEMP[key] = self.ht.hash[key]
                 for key in self.TEMP:
                     userStream = 'remove {}'.format(key)
                     self.performRemove(userStream=userStream)
+                print('temp is {}'.format(self.TEMP))
 
                 #Handle adding node to the ring
                 msg = self.addToRing(stream['from'], stream)
@@ -469,6 +479,7 @@ class P2PHashTableClient:
                     self.send_msg(msg, stream['from'], True)
                 else:
                     # add everything back into hashtable
+                    print('adding everything to hashtable')
                     for key in self.TEMP:
                         userStream = 'insert {} {}'.format(key, self.TEMP[key])
                         self.performInsert(userStream=userStream)
@@ -570,6 +581,7 @@ class P2PHashTableClient:
                     # update next
                     self.next = stream['from']
                 # need to rebalance after crash acknowledge
+                print('got crash acknowledge, doing a rebalance')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
