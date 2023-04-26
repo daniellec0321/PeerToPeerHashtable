@@ -1,5 +1,0 @@
-insert ben 10
-insert 10 ben
-lookup ben
-delete 10
-lookup 10

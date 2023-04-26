@@ -1,0 +1,6 @@
+50 Copies Successfully Inserted. Insertion time 1.6824823598880302e+18 seconds
+50 Copies Successfully Inserted. Insertion time 1.6824823737763008e+18 seconds
+50 Copies Successfully Inserted. Insertion time 1.6824823737865364e+18 seconds
+50 Copies Successfully Inserted. Insertion time 1.68248237378382e+18 seconds
+50 Copies Successfully Inserted. Insertion time 1.6824823738165445e+18 seconds
+50 Copies Successfully Inserted. Insertion time 1.682482373806507e+18 seconds
