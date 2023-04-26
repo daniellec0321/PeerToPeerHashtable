@@ -34,11 +34,14 @@ class P2PHashTableClient:
         self.counter = 0
 
         self.clean_exit = clean_exit
+        self.TEMP = dict()
 
         # TODO: run enter ring here
 
     def __del__(self):
+        print('\nExiting program...')
         if self.clean_exit == False:
+            print('Program crashed.')
             return
         # update next node
         if self.next and self.next[1] != self.ipAddress:
@@ -56,6 +59,7 @@ class P2PHashTableClient:
                 value = self.ht.hash[key]
                 userStream = 'insert {} {}'.format(key, value)
                 self.performInsert(userStream=userStream)
+        print('Program finished exiting.')
     
     
     
@@ -265,9 +269,7 @@ class P2PHashTableClient:
             # send update prev and range to next process
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
-        if self.consultFingerTable(hashedIP, msg):
-            print('An error occurred.')
-            sys.exit(0)
+        self.consultFingerTable(hashedIP, msg)
 
 
 
@@ -343,7 +345,6 @@ class P2PHashTableClient:
                     
                     self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
                     self.counter += 1
-
                 
                 for sock in read_sockets:
                     
@@ -412,6 +413,7 @@ class P2PHashTableClient:
                         #Parse Data
                         if(stream):
                             #TODO: Define Way to parse stream
+
                             # print('Message Recieved: ', stream)
                             # print(stream)
                             self.conn.close()
@@ -434,11 +436,27 @@ class P2PHashTableClient:
         
         if 'method' in stream:
             if stream['method'] == 'joinReq':
+
+                # Remove everything from hashtable
+                self.TEMP = dict()
+                for key in self.ht.hash:
+                    self.TEMP[key] = self.ht.hash[key]
+                for key in self.TEMP:
+                    userStream = 'remove {}'.format(key)
+                    self.performRemove(userStream=userStream)
+
                 #Handle adding node to the ring
                 msg = self.addToRing(stream['from'], stream)
                 #Need to send message back
                 if msg:
+                    # TODO: failure check this send msg
                     self.send_msg(msg, stream['from'], True)
+                else:
+                    # add everything back into hashtable
+                    for key in self.TEMP:
+                        userStream = 'insert {} {}'.format(key, self.TEMP[key])
+                        self.performInsert(userStream=userStream)
+                    self.TEMP = dict()
 
             elif stream['method'] == 'join':
                 self.next = stream['next']
@@ -461,17 +479,10 @@ class P2PHashTableClient:
 
             elif stream['method'] == 'rebalance':
                 # this is telling a process to loop through its current data and rebalance it
-                # keep temporary hashtable
-                temp = dict()
-                for key in self.ht.hash:
-                    # record into temp dictionary
-                    temp[key] = self.ht.lookup(key)
-                # clear dictionary
-                self.ht.hash = dict()
-                # go through temp and reinsert
-                for key in temp:
-                    userStream = 'insert {} {}'.format(key, temp[key])
+                for key in self.TEMP:
+                    userStream = 'insert {} {}'.format(key, self.TEMP[key])
                     self.performInsert(userStream=userStream)
+                self.TEMP = dict()
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -480,7 +491,6 @@ class P2PHashTableClient:
                 #Handle updating next node --> need to send ack
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
-                # print('Updated Next', self.prev)
                 msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
                 self.send_msg(msg, stream['from'], True)
                 
@@ -522,6 +532,14 @@ class P2PHashTableClient:
 
             elif stream['method'] == 'remove':
                 self.performRemove(processStream=stream)
+
+            elif stream['method'] == 'removeCopy':
+                ret = self.updateHashTable('remove', stream['key'])
+                if ret:
+                    msg = {'method': 'ack', 'message': 'Successful removal of copy'}
+                else:
+                    msg = {'method': 'ack', 'message': 'Error on removal of copy'}    
+                self.send_msg(msg, stream['from'])
 
             elif stream['method'] == 'ack':
                 # check if returning from a lookup
@@ -636,8 +654,11 @@ class P2PHashTableClient:
             hashedKey = self.hashKey(key)
             msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
             if self.consultFingerTable(hashedKey, msg):
-                # perform insert
-                return self.updateHashTable('remove', key)
+                # perform remove
+                ret = self.updateHashTable('remove', key)
+                msg = {'method': 'removeCopy', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
+                return ret
             else:
                 # message has been successfully forwarded
                 pass
@@ -646,6 +667,8 @@ class P2PHashTableClient:
             hashedKey = self.hashKey(processStream['key'])
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('remove', processStream['key'])
+                msg = {'method': 'removeCopy', 'key': processStream['key'], 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,self.next)
                 # return ack
                 if ret:
                     msg = {'method': 'ack', 'message': 'Successful remove'}
@@ -939,7 +962,6 @@ class P2PHashTableClient:
     def testSystem(self):
         #Prepare arguments to be passed to client
         #
-        
         f = Faker()
         for i in range(50):
             l = [f.name().replace(' ',''), f.name().replace(' ','')]
