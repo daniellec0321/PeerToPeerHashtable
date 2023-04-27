@@ -19,7 +19,7 @@ class P2PHashTableClient:
 
         self.inRing = False
 
-        # TODO: where to put open socket connections
+        # Where to put open socket connections
         self.sock = None
         self.conn = None
         self.stdinDesc = None
@@ -37,7 +37,6 @@ class P2PHashTableClient:
 
         self.clean_exit = clean_exit
         self.TEMP = dict()
-        self.JOINTEMP = dict()
 
         # TODO: run enter ring here
 
@@ -84,7 +83,7 @@ class P2PHashTableClient:
             self.startP2P()
         else:
             #Details contains the information for sockets in the name server
-            #TODO: Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
+            # Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
             port = 0
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.bind((self.ipAddress,port))
@@ -112,14 +111,14 @@ class P2PHashTableClient:
             #No entries in the ring, so need to start 
             return False
         
-        #TODO: Check to see if any servers are available
+        # Check to see if any servers are available
         for entry in data:
             #Contact each of these servers to see if they are available/in the ring
             newSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 newSock.connect((entry['address'], entry['port']))
                 
-                #TODO: If connect succeeds, talk to connecting and get inserted into the ring
+                # If connect succeeds, talk to connecting and get inserted into the ring
                 #      When connect succeeds, locate server will return socket
                 newSock.close()
                 
@@ -151,7 +150,6 @@ class P2PHashTableClient:
         
         #Differentiates the range by the smallest fraction
         self.lowRange = location + UNIT
-        # self.lowRange = location + (1 / pow(2,52) )
         
         #Start listening socket
         port = 0
@@ -339,7 +337,7 @@ class P2PHashTableClient:
 
         while True:
 
-            # check if 5 seconds have passed and perform sanity check if necessary
+            # check if 3 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
             if ((sanity_curr_time - sanity_last_time) > 3) and self.inRing:
                 sanity_last_time = sanity_curr_time
@@ -431,8 +429,6 @@ class P2PHashTableClient:
 
                         #Parse Data
                         if(stream):
-                            #TODO: Define Way to parse stream
-
                             # print('Message Recieved: ', stream)
                             # print(stream)
                             self.conn.close()
@@ -440,8 +436,6 @@ class P2PHashTableClient:
                             listen_list.remove(sock)
                                 
             except TimeoutError: #This exception is taken on timeout
-                #TODO: Define Exception for timeout
-                        
                 # self.sendToNameServer()
                 pass
         
@@ -480,54 +474,6 @@ class P2PHashTableClient:
                 msg = {'method': 'ack', 'message': 'Successfully rebalanced', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, stream['from'])
 
-                '''
-            elif stream['method'] == 'rebalance':
-                print('performing a rebalance')
-                for key in self.ht.hash:
-                    userStream = 'insert {} {}'.format(key, self.ht.hash[key])
-                    self.performInsert(userStream=userStream)
-                for key in self.TEMP:
-                    userStream = 'insert {} {}'.format(key, self.TEMP[key])
-                    self.performInsert(userStream=userStream)
-                self.TEMP = dict()
-                # send acknowledge
-                msg = {'method': 'ack', 'message': 'Successful rebalance'}
-                self.send_msg(msg, stream['from'], True)
-
-            elif stream['method'] == 'joinRebalance':
-                print('performing a rebalance, jointemp is {}'.format(self.JOINTEMP))
-                for key in self.JOINTEMP:
-                    userStream = 'insert {} {}'.format(key, self.JOINTEMP[key])
-                    self.performInsert(userStream=userStream)
-                self.JOINTEMP = dict()
-                # send acknowledge
-                msg = {'method': 'ack', 'message': 'Successful rebalance'}
-                self.send_msg(msg, stream['from'], True)
-
-            elif stream['method'] == 'joinSaveAndRemove':
-                # save all keys and then remove
-                self.JOINTEMP = dict()
-                for key in self.ht.hash:
-                    self.JOINTEMP[key] = self.ht.hash[key]
-                for key in self.JOINTEMP:
-                    userStream = 'remove {}'.format(key)
-                    self.performRemove(userStream=userStream)
-
-                # send acknowledgement
-                toForward = stream['toForward']
-                msg = {'method': 'joinSaveAndRemoveAck', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': toForward}
-
-            elif stream['method'] == 'joinSaveAndRemoveAck':
-                # can now let incoming node join ring
-                s = stream['toForward']
-                msg = self.addToRing(s['from'], s)
-                #Need to send message back
-                if msg:
-                    # TODO: failure check this send msg
-                    self.send_msg(msg, s['from'], True)
-                '''
-
-
             elif stream['method'] == 'joinReq':
 
                 # check if I am the only node, and if so, just handle ring
@@ -559,15 +505,6 @@ class P2PHashTableClient:
                         # message has been forwarded
                         pass
 
-                '''
-                #Handle adding node to the ring
-                msg = self.addToRing(stream['from'], stream)
-                #Need to send message back
-                if msg:
-                    # TODO: failure check this send msg
-                    self.send_msg(msg, stream['from'], True)
-                '''
-
             elif stream['method'] == 'join':
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
@@ -575,14 +512,10 @@ class P2PHashTableClient:
                 self.fingerTable.addNode(stream['prev'])
                 self.highRange = stream['highRange']
                 self.lowRange = stream['lowRange']
-                # JSON dumps converts [()] to [[]] --> need to convert
                 self.fingerTable.ft = stream['ft']
                 
                 self.fingerTable.addNode(stream['from'])
                 
-                # msg = {'method': 'ack', 'message': 'Successfully joined ring'}
-                # self.send_msg(msg, stream['from'], True)
-
                 self.inRing = True
 
                 # send an insert from temp to next and prev
@@ -597,14 +530,6 @@ class P2PHashTableClient:
                 for key in self.TEMP:
                     self.performInsert(userStream='insert {} {}'.format(key, self.TEMP[key]))
                 self.TEMP = dict()
-
-                '''
-                # send a rebalance request to your next and prev
-                msg = {'method': 'joinRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
-                self.send_msg(msg, self.next)
-                msg = {'method': 'joinRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
-                self.send_msg(msg, self.prev)
-                '''
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -668,7 +593,7 @@ class P2PHashTableClient:
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
                     print('{}: {}'.format(stream['key'], stream['value']))
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
-                    #TODO: Check next node to see if key is there
+                    # Check next node to see if key is there
                     msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
                     self.send_msg(msg,stream['next'])
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None:
@@ -855,7 +780,7 @@ class P2PHashTableClient:
         else:
             return False
             
-        #TODO: Adding into ring when there are more than 2 members
+        # Adding into ring when there are more than 2 members
         #consultFingerTable will send this message to the appropriate source
                 
         #Once you have high Range --> get low range by consulting finger table
