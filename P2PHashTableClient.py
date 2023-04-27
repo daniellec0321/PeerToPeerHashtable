@@ -9,6 +9,7 @@ from FingerTable import FingerTable
 from HashTable import HashTable
 from faker import Faker
 import random
+import os
 
 UNIT = (2 * math.pi) / pow(2, 32)
 
@@ -36,8 +37,11 @@ class P2PHashTableClient:
         self.clean_exit = clean_exit
         self.TEMP = dict()
         self.testFile = None
+        self.finalResult = None
         
-        self.runTests = False
+        self.runTests = True
+        self.messageCount = 0
+        self.exit = False
 
         # TODO: run enter ring here
 
@@ -321,9 +325,11 @@ class P2PHashTableClient:
         write_list = []
         exception_list = []
         x = 0
-        write = False
+        output = None
         
         startTest = time.time_ns()
+        
+        intervalTimer = time.time_ns()
 
         # variable to keep track of when to do sanity checks
         sanity_last_time = time.time()
@@ -349,29 +355,43 @@ class P2PHashTableClient:
                 
                 #Allow 20 seconds before starting test to allow all nodes to join
                 if self.runTests:
-                    if not read_sockets and x == 0 and (time.time_ns() - startTest) / 1000000000 > 20:
+                    if not read_sockets and x == 0 and (time.time_ns() - startTest) / 1000000000 > 60:
                         x = 1
                         self.testSystem()
                         
-                    elif not read_sockets and x == 1 and self.counter < 50:
+                    elif not read_sockets and x == 1 and self.counter < 500:
                         if self.counter == 0:
                             start = time.time_ns()
+                            
 
                         self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
                         self.counter += 1
                         
-                    elif self.counter == 50 and not write:
+                        if self.counter == 500:
+                            print(f'500 Copies Successfully Inserted\n')
+                        
+                    elif self.counter == 500 and (time.time_ns() - intervalTimer) / 1000000000 > 0.5:
                         #Writing is complete
-                        end = time.time_ns()
+                        intervalTimer = time.time_ns()
+                        #From here lookup the last result and see how long it takes to get self.lastResult[1]
+                        ret = self.performLookup(userStream=f'lookup {self.finalResult[0]}')
+                        if 'value' in ret and ret['value'] == self.finalResult[1]:
+                            self.exit = True
                         
-                        outputString = f'50 Copies Successfully Inserted. Insertion time {end - start / 1000000000} seconds\n'
                         
-                        self.testFile.write(outputString)
-                        
-                        write = True
-                        
-                    elif write and (time.time_ns() - start) / 1000000000 > 60:
+                    elif self.exit and output == None:
                         #Kill all processes 60 seconds after inserts are complete to avoid rebalancing messing with measurements
+                        #Write to file regarding how long this took
+                        end = time.time_ns()
+                        output = f'Inserting 500 elements completed & verified - Time Elapsed: {(end - start) / 1000000000} seconds - Message Count: {self.messageCount}\n'
+                        
+                        print(output)
+                        
+                        self.testFile.write(output)
+                        self.testFile.flush()
+                        os.fsync(self.testFile.fileno())
+                        
+                    if self.exit and (time.time_ns() - start) / 1000000000 > 30:
                         sys.exit(0)
                 
                 for sock in read_sockets:
@@ -443,12 +463,14 @@ class P2PHashTableClient:
 
                         #Parse Data
                         if(stream):
+                            self.messageCount += 1
                             #TODO: Define Way to parse stream
 
                             # print('Message Recieved: ', stream)
                             # print(stream)
                             self.conn.close()
                             self.parseStream(stream, msg_length)
+                            self.messageCount += 1
                             listen_list.remove(sock)
                                 
             except TimeoutError: #This exception is taken on timeout
@@ -475,9 +497,9 @@ class P2PHashTableClient:
                 msg = {'method': 'ack', 'message': 'Successful rebalance'}
                 self.send_msg(msg, stream['from'], True)
 
-            elif stream['method'] == 'joinReq':
+            if stream['method'] == 'joinReq':
 
-                # Remove everything from hashtable
+                Remove everything from hashtable
                 self.TEMP = dict()
                 for key in self.ht.hash:
                     self.TEMP[key] = self.ht.hash[key]
@@ -579,6 +601,8 @@ class P2PHashTableClient:
                 # check if returning from a lookup
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
                     print('{}: {}'.format(stream['key'], stream['value']))
+                    if stream['value'] == self.finalResult[1]:
+                        self.exit = True
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
                     #TODO: Check next node to see if key is there
                     msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -1005,9 +1029,12 @@ class P2PHashTableClient:
         #Prepare arguments to be passed to client
         #
         f = Faker()
-        for i in range(50):
+        for i in range(500):
             l = [f.text().replace(' ','').replace('\n',''), f.name().replace(' ','')]
             self.testInput.append(l)
+            
+        #Fetch last result to know when all data has been inputted
+        self.finalResult = self.testInput[-1]
            
         numClients = 10
         self.testFile = open(f'tests/{self.ipAddress}/outputs-{numClients}.txt', 'a')
