@@ -1,1 +1,1 @@
-50 Copies Successfully Inserted. Insertion time 1.6824824159121884e+18 seconds
+Inserting 500 elements completed & verified - Time Elapsed: 0.134773563 seconds - Message Count: 2020
