@@ -12,7 +12,7 @@ class FingerTable():
 
         # check that node is not already in table
         for node in self.ft:
-            if node[1] == args[1]:
+            if node[1] == args[1] and node[2] == args[2]:
                 return False
 
         self.ft.append(args)
