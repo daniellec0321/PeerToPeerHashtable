@@ -58,7 +58,7 @@ class P2PHashTableClient:
         self.lowRange = 1000
         # rebalance data
         print('im leaving, so sending out data')
-        if self.next and self.prev and self.next[1] != self.ipAddress and self.prev[1] != self.ipAddress:
+        if self.next and self.prev and (self.next[1] != self.ipAddress or self.next[2] != self.port) and (self.prev[1] != self.ipAddress or self.prev[2] != self.port):
             for key in self.ht.hash:
                 value = self.ht.hash[key]
                 userStream = 'insert {} {}'.format(key, value)
@@ -171,6 +171,10 @@ class P2PHashTableClient:
 
     # check if next and previous are still the next and previous
     def sanityCheck(self):
+
+        # if it is only you in the ring, just return
+        if not self.prev or not self.next or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
+            return
 
         # send updatePrev to next
         prev_args = [self.highRange, self.ipAddress, self.port]
@@ -336,7 +340,7 @@ class P2PHashTableClient:
 
             # check if 5 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
-            if ((sanity_curr_time - sanity_last_time) > 5) and self.inRing:
+            if ((sanity_curr_time - sanity_last_time) > 3) and self.inRing:
                 sanity_last_time = sanity_curr_time
                 self.sanityCheck()
             
@@ -468,6 +472,12 @@ class P2PHashTableClient:
                 #Need to send message back
                 if msg:
                     self.send_msg(msg, author, True)
+
+            elif stream['method'] == 'crashRebalance':
+                for key in self.ht.hash:
+                    self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
+                msg = {'method': 'ack', 'message': 'Successfully rebalanced', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, stream['from'])
 
                 '''
             elif stream['method'] == 'rebalance':
@@ -677,11 +687,11 @@ class P2PHashTableClient:
                     # update next
                     self.next = stream['from']
                 # need to rebalance after crash acknowledge
-                print('got crash acknowledge, doing a rebalance')
+                print('got crash acknowledge, doing a crashrebalance')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
-                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                msg = {'method': 'crashRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, stream['from'])
 
 
