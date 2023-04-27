@@ -57,7 +57,6 @@ class P2PHashTableClient:
         self.highRange = 1001
         self.lowRange = 1000
         # rebalance data
-        print('im leaving, so sending out data')
         if self.next and self.prev and (self.next[1] != self.ipAddress or self.next[2] != self.port) and (self.prev[1] != self.ipAddress or self.prev[2] != self.port):
             for key in self.ht.hash:
                 value = self.ht.hash[key]
@@ -260,6 +259,8 @@ class P2PHashTableClient:
     # crash_args: the tuple of the destination that crashed
     # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
+
+        print('Crash discovered, handling...')
 
         # case where there is only 1 node in the ring
         if not self.next or not self.prev or self.next[1] == self.prev[1] or self.next[1] == self.ipAddress or self.prev[1] == self.ipAddress:
@@ -531,7 +532,6 @@ class P2PHashTableClient:
 
                 # check if I am the only node, and if so, just handle ring
                 if not self.next or not self.prev or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
-                    print('i am the only node, just enter into the ring')
                     #Handle adding node to the ring
                     msg = self.addToRing(stream['from'], stream)
                     #Need to send message back
@@ -541,7 +541,6 @@ class P2PHashTableClient:
 
 
                 else:
-                    print('i am not the only node, do rebalance and such')
                     # Hash IP from join req.
                     hashedIP = self.hashKey(stream['from'][1])
                     # if it for me:
@@ -570,7 +569,6 @@ class P2PHashTableClient:
                 '''
 
             elif stream['method'] == 'join':
-                print('got a join message')
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
                 self.prev = stream['prev']
@@ -589,12 +587,10 @@ class P2PHashTableClient:
 
                 # send an insert from temp to next and prev
                 msg = {'method': 'insertFromTemp', 'from': [self.highRange, self.ipAddress, self.port]}
-                print(self.send_msg(msg, self.prev))
-                print(self.send_msg(msg, self.next))
-                print('here? so sent message?')
+                self.send_msg(msg, self.prev)
+                self.send_msg(msg, self.next)
 
             elif stream['method'] == 'insertFromTemp':
-                print('in insert from temp')
                 # reinsert all values from temp
                 for key in self.ht.hash:
                     self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
@@ -687,7 +683,6 @@ class P2PHashTableClient:
                     # update next
                     self.next = stream['from']
                 # need to rebalance after crash acknowledge
-                print('got crash acknowledge, doing a crashrebalance')
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
