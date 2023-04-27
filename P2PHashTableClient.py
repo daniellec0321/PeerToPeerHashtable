@@ -95,8 +95,6 @@ class P2PHashTableClient:
             #Details contains a socket that you need to send a message to --> Send connection message
             result = self.sendJoinRequest(details)
 
-            print(result)
-
             if result:
                 #If join request succeeds, send to name server and start reading messages
                 self.sendToNameServer()
@@ -159,7 +157,7 @@ class P2PHashTableClient:
         self.highRange = hashedIP
         
         #Differentiates the range by the smallest fraction
-        self.lowRange = hashedIP
+        self.lowRange = hashedIP + UNIT
         
         self.prev = [self.highRange, self.ipAddress, self.port]
         self.next = [self.highRange, self.ipAddress, self.port]
@@ -251,7 +249,7 @@ class P2PHashTableClient:
 
         # case where there is only 1 node in the ring
         if not self.next or not self.prev or self.next[1] == self.prev[1] or self.next[1] == self.ipAddress or self.prev[1] == self.ipAddress:
-            self.lowRange = self.highRange
+            self.lowRange = self.highRange + UNIT
             self.next = [self.highRange, self.ipAddress, self.port]
             self.prev = [self.highRange, self.ipAddress, self.port]
             self.fingerTable.ft = list()
@@ -270,7 +268,7 @@ class P2PHashTableClient:
             msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}]}
         else:
             # send update prev and range to next process
-            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
+            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange + UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
         self.consultFingerTable(hashedIP, msg)
 
@@ -359,8 +357,6 @@ class P2PHashTableClient:
                         end = time.time_ns()
                         
                         outputString = f'50 Copies Successfully Inserted. Insertion time {end - start / 1000000000} seconds\n'
-                        
-                        print(outputString)
                         
                         self.testFile.write(outputString)
                         
@@ -487,8 +483,6 @@ class P2PHashTableClient:
 
             elif stream['method'] == 'join':
 
-                print(stream)
-
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
                 self.prev = stream['prev']
@@ -586,7 +580,7 @@ class P2PHashTableClient:
                 if stream['todo'] == 'updatePrevAndRange':
                     # update next and range
                     self.prev = stream['from']
-                    self.lowRange = stream['from'][0]
+                    self.lowRange = stream['from'][0] + UNIT
                 else:
                     # update previous
                     self.next = stream['from']
@@ -719,41 +713,39 @@ class P2PHashTableClient:
         
         #If fingertable is empty, then this is the second node joining so can just add to it
         if self.consultFingerTable(highRange,msg):
-            self.fingerTable.addNode((highRange, details[1], details[2]))
+            self.fingerTable.addNode([highRange, details[1], details[2]])
             
             #After adding finger table, need to get low range by communicating with assigned nextNode which will be who sends you the message
             
             if self.prev != [self.highRange, self.ipAddress, self.port]:
-                self.lowRange = highRange
+                self.lowRange = highRange + UNIT
                 
                 next = [self.highRange, self.ipAddress, self.port]
                 
                 prev = self.prev
                 
-                lowRange = self.prev[0]
+                lowRange = self.prev[0] + UNIT
                 
                 self.prev = [highRange, details[1], details[2]]
-                self.fingerTable.addNode(self.prev)
                 #More than 2 members
                 #Need to update prev next
                 self.sendUpdateNext([highRange, details[1], details[2]], prev)
 
             else: #2 members
-                self.lowRange = highRange
+                self.lowRange = highRange + UNIT
                 
-                lowRange = self.highRange
+                lowRange = self.highRange + UNIT
                 
                 #Set next and prev as this node
                 prev = self.prev
                 next = [self.highRange, self.ipAddress, self.port]
-                self.prev = [highRange, details[1], details[2]]
                 self.fingerTable.addNode(self.prev)
             
                 self.next = [highRange, details[1], details[2]]
                 self.fingerTable.addNode(self.next)
                 
             
-            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
+            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
         
         else:
             return False
@@ -788,7 +780,6 @@ class P2PHashTableClient:
             elif self.lowRange <= position <= 2 * math.pi:
                 return True
             else:
-                print('Not me', self.fingerTable.ft)
                 return not self.forwardMessage(msg, position)
             
         elif self.lowRange <= position <= self.highRange:
@@ -799,7 +790,6 @@ class P2PHashTableClient:
             
         else:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
-            print('Not me 2', self.fingerTable.ft)
             return not self.forwardMessage(msg, position)
     
     def hashKey(self, key, ip=False, port=None):
@@ -835,7 +825,6 @@ class P2PHashTableClient:
             a = a % (pow(2,32) - 1)
             a = a / (pow(2, 32) - 1)
             a = a * 2 * math.pi
-
             return a
 
         except: #Catch non strings and record as errors
