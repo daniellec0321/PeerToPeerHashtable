@@ -206,6 +206,7 @@ class P2PHashTableClient:
             # need to perform the functions in the thingy
             for func in processArgs['toForward']:
                 # func is a json msg
+
                 if func['method'] == 'updateNext':
                     self.next = func['next']
                     self.fingerTable.addNode(func['next'])
@@ -215,6 +216,7 @@ class P2PHashTableClient:
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated next pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
                     self.send_msg(msg, processArgs['from'], True)
+
                 if func['method'] == 'updatePrev':
                     self.prev = func['prev']
                     self.fingerTable.addNode(func['prev'])
@@ -224,6 +226,7 @@ class P2PHashTableClient:
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
                     self.send_msg(msg, processArgs['from'], True)
+
                 if func['method'] == 'updateRange':
                     if func['low'] >= 0:
                         self.lowRange = func['low']
@@ -235,11 +238,15 @@ class P2PHashTableClient:
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated range', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
                     self.send_msg(msg, processArgs['from'], True)
-                
+
         # Forward a message if it is not for you
         else:
+
             hashedIP = self.hashKey(processArgs[p][1], True, processArgs[p][2])
-            self.consultFingerTable(hashedIP, processArgs)
+            if p == 'next':
+                self.consultFingerTable(hashedIP, processArgs, overshoot=False)
+            else:
+                self.consultFingerTable(hashedIP, processArgs, overshoot=True)
 
 
 
@@ -264,20 +271,21 @@ class P2PHashTableClient:
         # Different functionalities for whether the crash is next or previous
         msg = {}
         if position == 'prev':
-            # send update next to the next process
+            # send update next AND REBALANCE to the next process
             msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}]}
         else:
             # send update prev and range to next process
             msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange + UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
-        self.consultFingerTable(hashedIP, msg)
+        if self.consultFingerTable(hashedIP, msg):
+            pass
 
 
 
     # use finger table or next and prev pointers to take a message to a process
     # msg: dictionary of the message to send
     # position: position on the ring where this message is trying to go
-    def forwardMessage(self, msg, position):
+    def forwardMessage(self, msg, position, overshoot=True):
         
         # check length of finger table
         if len(self.fingerTable.ft) <= 0:
@@ -286,7 +294,7 @@ class P2PHashTableClient:
 
         # get where to send the process
         while len(self.fingerTable.ft) > 0:
-            proc = self.fingerTable.findProcess(position)
+            proc = self.fingerTable.findProcess(position, overshoot)
             ret = self.send_msg(msg, proc, True)
             # try again if needed
             if ret['status'] == 'failure':
@@ -322,10 +330,10 @@ class P2PHashTableClient:
 
         # variable to keep track of sending to name server
         ns_last_time = time.time()
-        
+
         while True:
 
-            # check if 60 seconds have passed and perform sanity check if necessary
+            # check if 5 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
             if (sanity_curr_time - sanity_last_time) > 5 and self.highRange: #Modify sanity check to only run if joined ring
                 sanity_last_time = sanity_curr_time
@@ -458,7 +466,16 @@ class P2PHashTableClient:
         #Two different types of methods--> ack and requests
         
         if 'method' in stream:
-            if stream['method'] == 'joinReq':
+
+            if stream['method'] == 'rebalance':
+                for key in self.ht.hash:
+                    userStream = 'insert {} {}'.format(key, self.ht.hash[key])
+                    self.performInsert(userStream=userStream)
+                # send acknowledge
+                msg = {'method': 'ack', 'message': 'Successful rebalance'}
+                self.send_msg(msg, stream['from'], True)
+
+            elif stream['method'] == 'joinReq':
 
                 # Remove everything from hashtable
                 self.TEMP = dict()
@@ -500,13 +517,6 @@ class P2PHashTableClient:
                 # send a rebalance request to your next
                 msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, self.next)
-
-            elif stream['method'] == 'rebalance':
-                # this is telling a process to loop through its current data and rebalance it
-                for key in self.TEMP:
-                    userStream = 'insert {} {}'.format(key, self.TEMP[key])
-                    self.performInsert(userStream=userStream)
-                self.TEMP = dict()
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -582,8 +592,14 @@ class P2PHashTableClient:
                     self.prev = stream['from']
                     self.lowRange = stream['from'][0] + UNIT
                 else:
-                    # update previous
+                    # update next
                     self.next = stream['from']
+                # need to rebalance after crash acknowledge
+                for key in self.ht.hash:
+                    userStream = 'insert {} {}'.format(key, self.ht.hash[key])
+                    self.performInsert(userStream=userStream)
+                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, stream['from'])
 
 
 
@@ -760,7 +776,7 @@ class P2PHashTableClient:
     
 
     
-    def consultFingerTable(self, position, msg):
+    def consultFingerTable(self, position, msg, overshoot=True):
         #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
         # delete yourself, add your previous and next to finger table
@@ -780,7 +796,7 @@ class P2PHashTableClient:
             elif self.lowRange <= position <= 2 * math.pi:
                 return True
             else:
-                return not self.forwardMessage(msg, position)
+                return not self.forwardMessage(msg, position, overshoot)
             
         elif self.lowRange <= position <= self.highRange:
             return True
@@ -790,7 +806,7 @@ class P2PHashTableClient:
             
         else:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
-            return not self.forwardMessage(msg, position)
+            return not self.forwardMessage(msg, position, overshoot)
     
     def hashKey(self, key, ip=False, port=None):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
@@ -960,7 +976,7 @@ class P2PHashTableClient:
         nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
 
     def debug(self):
-        print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}')
+        print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}, ip address: {self.ipAddress}')
         print('my hashtable is:')
         for key in self.ht.hash:
             print('{}: {}'.format(key, self.ht.hash[key]))
