@@ -535,7 +535,7 @@ class P2PHashTableClient:
 
                 else:
                     # Hash IP from join req.
-                    hashedIP = self.hashKey(stream['from'][1])
+                    hashedIP = self.hashKey(stream['from'][1], True, stream['from'][2])
                     # if it for me:
                     if self.consultFingerTable(hashedIP, stream):
                         # Remove everything from hashtable.
