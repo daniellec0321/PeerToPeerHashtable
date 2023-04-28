@@ -506,182 +506,178 @@ class P2PHashTableClient:
         if 'method' not in stream:
             return False
         
-        # Check if 'method' in stream
-        if 'method' in stream:
+        # Command to store hashtable in TEMP and perform removes
+        if stream['method'] == 'saveAndRemove':
+            self.TEMP = dict()
+            for key in self.ht.hash:
+                self.TEMP[key] = self.ht.hash[key]
+            for key in self.TEMP:
+                self.performRemove(userStream='remove {}'.format(key))
+            msg = {'method': 'saveAndRemoveAck', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream['toForward']}
+            self.send_msg(msg, stream['from'])
 
-            if stream['method'] == 'saveAndRemove':
-                # put everything in your temp and then remove everything
-                self.TEMP = dict()
-                for key in self.ht.hash:
-                    self.TEMP[key] = self.ht.hash[key]
-                for key in self.TEMP:
-                    self.performRemove(userStream='remove {}'.format(key))
-                # send acknowledgement
-                msg = {'method': 'saveAndRemoveAck', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream['toForward']}
-                self.send_msg(msg, stream['from'])
+        # Acknowledgement from a save and remove, which means a waiting node is now authorized to enter the ring
+        elif stream['method'] == 'saveAndRemoveAck':
+            author = stream['toForward']['from']
+            msg = self.addToRing(author, stream['toForward'])
+            if msg:
+                self.send_msg(msg, author, True)
 
-            elif stream['method'] == 'saveAndRemoveAck':
-                # node can now join the the thing
-                author = stream['toForward']['from']
-                msg = self.addToRing(author, stream['toForward'])
-                #Need to send message back
+        # Command to rebalance the ring after a crash
+        elif stream['method'] == 'crashRebalance':
+            for key in self.ht.hash:
+                self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
+            msg = {'method': 'ack', 'message': 'Successfully rebalanced', 'from': [self.highRange, self.ipAddress, self.port]}
+            self.send_msg(msg, stream['from'])
+
+        # Request from node to join the ring
+        elif stream['method'] == 'joinReq':
+
+            # If only one node in ring, can handle a join with no rebalancing
+            if not self.next or not self.prev or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
+                msg = self.addToRing(stream['from'], stream)
                 if msg:
-                    self.send_msg(msg, author, True)
+                    self.send_msg(msg, stream['from'], True)
 
-            elif stream['method'] == 'crashRebalance':
-                for key in self.ht.hash:
-                    self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
-                msg = {'method': 'ack', 'message': 'Successfully rebalanced', 'from': [self.highRange, self.ipAddress, self.port]}
-                self.send_msg(msg, stream['from'])
-
-            elif stream['method'] == 'joinReq':
-
-                # check if I am the only node, and if so, just handle ring
-                if not self.next or not self.prev or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
-                    #Handle adding node to the ring
-                    msg = self.addToRing(stream['from'], stream)
-                    #Need to send message back
-                    if msg:
-                        # TODO: failure check this send msg
-                        self.send_msg(msg, stream['from'], True)
-
-
+            # Multiple nodes in ring, so must perform some rebalancing or forward message
+            else:
+                hashedIP = self.hashKey(stream['from'][1], True, stream['from'][2])
+                # Message is meant for me, so perform rebalancing
+                if self.consultFingerTable(hashedIP, stream):
+                    self.TEMP = dict()
+                    for key in self.ht.hash:
+                        self.TEMP[key] = self.ht.hash[key]
+                    for key in self.TEMP:
+                        self.performRemove(userStream='remove {}'.format(key))
+                    # Tell previous node to also rebalance
+                    msg = {'method': 'saveAndRemove', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream}
+                    self.send_msg(msg, self.prev)
+                # Message is not meant for me, which means it has been forwarded
                 else:
-                    # Hash IP from join req.
-                    hashedIP = self.hashKey(stream['from'][1], True, stream['from'][2])
-                    # if it for me:
-                    if self.consultFingerTable(hashedIP, stream):
-                        # Remove everything from hashtable.
-                        self.TEMP = dict()
-                        for key in self.ht.hash:
-                            self.TEMP[key] = self.ht.hash[key]
-                        for key in self.TEMP:
-                            self.performRemove(userStream='remove {}'.format(key))
-                        # send message to previous to remove everything
-                        msg = {'method': 'saveAndRemove', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream}
-                        self.send_msg(msg, self.prev)
-                    # if it isnt:
-                    else:
-                        # message has been forwarded
-                        pass
+                    pass
 
-            elif stream['method'] == 'join':
+        # Message from node with instructions of how to join ring
+        elif stream['method'] == 'join':
 
-                self.next = stream['next']
-                self.fingerTable.addNode(stream['next'])
-                self.prev = stream['prev']
-                self.fingerTable.addNode(stream['prev'])
-                self.highRange = stream['highRange']
-                self.lowRange = stream['lowRange']
-                self.fingerTable.ft = stream['ft']
+            # Set internal information from stream
+            self.next = stream['next']
+            self.fingerTable.addNode(stream['next'])
+            self.prev = stream['prev']
+            self.fingerTable.addNode(stream['prev'])
+            self.highRange = stream['highRange']
+            self.lowRange = stream['lowRange']
+            self.fingerTable.ft = stream['ft']
+            self.fingerTable.addNode(stream['from'])
+            self.inRing = True
+
+            # Send a rebalance message to previous and next
+            msg = {'method': 'insertFromTemp', 'from': [self.highRange, self.ipAddress, self.port]}
+            self.send_msg(msg, self.prev)
+            self.send_msg(msg, self.next)
+
+        # Received a command to rebalance
+        elif stream['method'] == 'insertFromTemp':
+            for key in self.ht.hash:
+                self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
+            for key in self.TEMP:
+                self.performInsert(userStream='insert {} {}'.format(key, self.TEMP[key]))
+            self.TEMP = dict()
+
+        # Command to find a an adjacent process to a process that crashed
+        elif stream['method'] == 'findProcess':
+            self.performFindProcess(stream)
+            
+        # Command to update next pointer
+        elif stream['method'] == 'updateNext':
+            self.next = stream['next']
+            self.fingerTable.addNode(stream['next'])
+            msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
+            self.send_msg(msg, stream['from'], True)
+            
+        # Command to update previous pointer
+        elif stream['method'] == 'updatePrev':
+            self.prev = stream['prev']
+            self.fingerTable.addNode(stream['prev'])
+            msg = {'method': 'ack', 'message': 'Successfully updated prev pointer'}
+            self.send_msg(msg, stream['from'], True)
                 
-                self.fingerTable.addNode(stream['from'])
-                
-                self.inRing = True
+        # Command to update range of control
+        elif stream['method'] == 'updateRange':
+            if stream['low'] >= 0:
+                self.lowRange = stream['low']
+            if stream['high'] >= 0:
+                self.highRange = stream['high']
+            msg = {'method': 'ack', 'message': 'Successfully updated range'}
+            self.send_msg(msg, stream['from'], True)
+            
+        # Send information of previous pointer
+        elif stream['method'] == 'getLow':
+            msg = {'method': 'ack', 'prev': self.prev, 'message': 'successfully retrieved prev info'}
+            self.send_msg(msg, stream['from'], True)
 
-                # send an insert from temp to next and prev
-                msg = {'method': 'insertFromTemp', 'from': [self.highRange, self.ipAddress, self.port]}
-                self.send_msg(msg, self.prev)
-                self.send_msg(msg, self.next)
+        # Command to insert a value
+        elif stream['method'] == 'insert':
+            self.performInsert(processStream=stream)
+            
+        # Command to insert a copy of a value
+        elif stream['method'] == 'insertCopy':
+            ret = self.updateHashTable('insert', stream['key'], stream['value'])
+            if ret:
+                msg = {'method': 'ack', 'message': 'Successful insert of copy'}
+            else:
+                msg = {'method': 'ack', 'message': 'Error on insertion of copy'}
+            self.send_msg(msg, stream['from'])
 
-            elif stream['method'] == 'insertFromTemp':
-                # reinsert all values from temp
-                for key in self.ht.hash:
-                    self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
-                for key in self.TEMP:
-                    self.performInsert(userStream='insert {} {}'.format(key, self.TEMP[key]))
-                self.TEMP = dict()
+        # Command to lookup a value
+        elif stream['method'] == 'lookup':
+            self.performLookup(processStream=stream)
 
-            elif stream['method'] == 'findProcess':
-                self.performFindProcess(stream)
-                
-            elif stream['method'] == 'updateNext':
-                #Handle updating next node --> need to send ack
-                self.next = stream['next']
-                self.fingerTable.addNode(stream['next'])
-                msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
-                self.send_msg(msg, stream['from'], True)
-                
-            elif stream['method'] == 'updatePrev':
-                #Handle updating prev node --> need to send ack
-                self.prev = stream['prev']
-                self.fingerTable.addNode(stream['prev'])
-                msg = {'method': 'ack', 'message': 'Successfully updated prev pointer'}
-                self.send_msg(msg, stream['from'], True)
-                
-            elif stream['method'] == 'updateRange':
-                if stream['low'] >= 0:
-                    self.lowRange = stream['low']
-                if stream['high'] >= 0:
-                    self.highRange = stream['high']
-                    
-                msg = {'method': 'ack', 'message': 'Successfully updated range'}
-                self.send_msg(msg, stream['from'], True)
-                
-            elif stream['method'] == 'getLow':
-                #Just need to return prev info
-                msg = {'method': 'ack', 'prev': self.prev, 'message': 'successfully retrieved prev info'}
-                self.send_msg(msg, stream['from'], True)
+        # Command to remove a value
+        elif stream['method'] == 'remove':
+            self.performRemove(processStream=stream)
 
-            elif stream['method'] == 'insert':
-                self.performInsert(processStream=stream)
-                
-            elif stream['method'] == 'insertCopy':
-                ret = self.updateHashTable('insert', stream['key'], stream['value'])
-                if ret:
-                    msg = {'method': 'ack', 'message': 'Successful insert of copy'}
-                else:
-                    msg = {'method': 'ack', 'message': 'Error on insertion of copy'}
-                    
-                self.send_msg(msg, stream['from'])
+        # Command to remove a copy of a value
+        elif stream['method'] == 'removeCopy':
+            ret = self.updateHashTable('remove', stream['key'])
+            if ret:
+                msg = {'method': 'ack', 'message': 'Successful removal of copy'}
+            else:
+                msg = {'method': 'ack', 'message': 'Error on removal of copy'}    
+            self.send_msg(msg, stream['from'])
 
-            elif stream['method'] == 'lookup':
-                self.performLookup(processStream=stream)
+        # Got an acknowledgement
+        elif stream['method'] == 'ack':
+            # If returning from a lookup, need to pring result
+            if stream['message'] == 'Result of lookup' and stream['value'] is not None:
+                print('{}: {}'.format(stream['key'], stream['value']))
+                if self.runTests and stream['value'] == self.finalResult[1]:
+                    self.exit = True
+            elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
+                msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg,stream['next'])
+            elif stream['message'] == 'Result of lookup' and stream['value'] is None:
+                print('Key {} does not exist in table.'.format(stream['key']))
 
-            elif stream['method'] == 'remove':
-                self.performRemove(processStream=stream)
-
-            elif stream['method'] == 'removeCopy':
-                ret = self.updateHashTable('remove', stream['key'])
-                if ret:
-                    msg = {'method': 'ack', 'message': 'Successful removal of copy'}
-                else:
-                    msg = {'method': 'ack', 'message': 'Error on removal of copy'}    
-                self.send_msg(msg, stream['from'])
-
-            elif stream['method'] == 'ack':
-                # check if returning from a lookup
-                if stream['message'] == 'Result of lookup' and stream['value'] is not None:
-                    print('{}: {}'.format(stream['key'], stream['value']))
-                    if self.runTests and stream['value'] == self.finalResult[1]:
-                        self.exit = True
-                elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
-                    # Check next node to see if key is there
-                    msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
-                    self.send_msg(msg,stream['next'])
-                elif stream['message'] == 'Result of lookup' and stream['value'] is None:
-                    print('Key {} does not exist in table.'.format(stream['key']))
-
-            elif stream['method'] == 'crashAcknowledge':
-                if stream['todo'] == 'updatePrevAndRange':
-                    # update next and range
-                    self.prev = stream['from']
-                    self.lowRange = stream['from'][0] + UNIT
-                else:
-                    # update next
-                    self.next = stream['from']
-                # need to rebalance after crash acknowledge
-                for key in self.ht.hash:
-                    userStream = 'insert {} {}'.format(key, self.ht.hash[key])
-                    self.performInsert(userStream=userStream)
-                msg = {'method': 'crashRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
-                self.send_msg(msg, stream['from'])
+        # Received acknowledge from crash's adjacent node, need to perform more actions
+        elif stream['method'] == 'crashAcknowledge':
+            if stream['todo'] == 'updatePrevAndRange':
+                self.prev = stream['from']
+                self.lowRange = stream['from'][0] + UNIT
+            else:
+                self.next = stream['from']
+            for key in self.ht.hash:
+                userStream = 'insert {} {}'.format(key, self.ht.hash[key])
+                self.performInsert(userStream=userStream)
+            # Tell sender to also perform a rebalance
+            msg = {'method': 'crashRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+            self.send_msg(msg, stream['from'])
 
 
 
+    # Given a stream, perform an insert on hashtable
     def performInsert(self, userStream=None, processStream=None):
 
-        # Hash given key
+        # Command to insert came from user
         if userStream:
             args = userStream.rstrip().split()
             if len(args) != 3:
@@ -690,40 +686,41 @@ class P2PHashTableClient:
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'insert', 'key': key, 'value': args[2], 'next': False, 'from': [self.highRange, self.ipAddress, self.port]}
+            # If key is in my range, then perform insert on my own table
             if self.consultFingerTable(hashedKey, msg):
-                # perform insert --> also need to send message to next
                 msg = {'method': 'insertCopy', 'key': key, 'value': args[2], 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg,self.next)
                 return self.updateHashTable('insert', key, args[2])
+            # Key is not meant for me, so message has been forwarded
             else:
-                # message has been successfully forwarded
                 pass
 
+        # Command to insert came from another process
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
+            # Check if key is in my range
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('insert', processStream['key'], processStream['value'])
                 msg = {'method': 'insertCopy', 'key': processStream['key'], 'value': processStream['value'], 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg,self.next)
-                # return ack
                 if ret:
                     msg = {'method': 'ack', 'message': 'Successful insert'}
                 else:
                     msg = {'method': 'ack', 'message': 'Error on insertion'}
                 self.send_msg(msg, processStream['from'])
+            # If key is not in range, then message has been forwarded
             else:
-                # already been forwarded
                 pass
 
     
 
-
+    # Given a stream, perform a lookup on hashtable
     def performLookup(self, userStream=None, processStream=None):
 
         # Perform lookup has a little bit of different semantics since you can either return the looked up value in the function or wait for it from another process.
         # Perform lookup will always return a dictionary with a key called 'status'. If status is set to forwarded, then you need to wait get the value from another process. If status is set to 'success', then there will be another element in the dictionary containing the value.
 
-        # lookup request from user
+        # Request to lookup came from user
         if userStream:
             args = userStream.rstrip().split()
             if len(args) != 2:
@@ -733,34 +730,37 @@ class P2PHashTableClient:
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'lookup', 'key': key, 'next': self.next, 'triedNext': False, 'from': [self.highRange, self.ipAddress, self.port]}
+            # Check if key is contained in my own hashtable
             if self.consultFingerTable(hashedKey, msg):
-                # perform lookup on my own table
                 ret = self.updateHashTable('lookup', key)
                 msg = {'status': 'success', 'value': ret}
                 return msg
+            # Otherwise, message has been forwarded
             else:
-                # message has been successfully forwarded
                 return {'status': 'forwarded'}
                 
+        # Request to lookup came from another process
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
+            # Check if key is contained in my own hashtable
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('lookup', processStream['key'])
-                # return ack
                 msg = {'method': 'ack', 'message': 'Result of lookup', 'key': processStream['key'], 'value': ret}
                 if processStream['triedNext'] == False:
                     msg['next'] = self.next
                     
                 self.send_msg(msg, processStream['from'])
                 return {'status': 'returned'}
+            # Otherwise, message has been forwarded
             else:
-                # already been forwarded
                 return {'status': 'forwarded'}
 
 
 
+    # Given a stream, perform a remove
     def performRemove(self, userStream=None, processStream=None):
         
+        # Command to remove came from user
         if userStream:
             args = userStream.rstrip().split()
             if len(args) != 2:
@@ -769,30 +769,31 @@ class P2PHashTableClient:
             key = args[1]
             hashedKey = self.hashKey(key)
             msg = {'method': 'remove', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
+            # Check if key is contained in my own hashtable
             if self.consultFingerTable(hashedKey, msg):
-                # perform remove
                 ret = self.updateHashTable('remove', key)
                 msg = {'method': 'removeCopy', 'key': key, 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg,self.next)
                 return ret
+            # Otherwise, message has been forwarded
             else:
-                # message has been successfully forwarded
                 pass
 
+        # Command to remove came from another process
         if processStream:
             hashedKey = self.hashKey(processStream['key'])
+            # Check if key is contained in my own hashtable
             if self.consultFingerTable(hashedKey, processStream):
                 ret = self.updateHashTable('remove', processStream['key'])
                 msg = {'method': 'removeCopy', 'key': processStream['key'], 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg,self.next)
-                # return ack
                 if ret:
                     msg = {'method': 'ack', 'message': 'Successful remove'}
                 else:
                     msg = {'method': 'ack', 'message': 'Error on removal'}
                 self.send_msg(msg, processStream['from'])
+            # Otherwise, message has been forwarded
             else:
-                # already been forwarded
                 pass
 
 
