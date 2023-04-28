@@ -41,7 +41,7 @@ class P2PHashTableClient:
         self.testFile = None
         self.finalResult = None
         
-        self.runTests = True
+        self.runTests = False
         self.messageCount = 0
         self.exit = False
 
@@ -336,9 +336,13 @@ class P2PHashTableClient:
         x = 0
         output = None
         
-        startTest = time.time_ns()
+        startTest = time.time()
+        if self.runTests:
+            startTest = time.time_ns()
         
-        intervalTimer = time.time_ns()
+        intervalTimer = time.time()
+        if self.runTests:
+            intervalTimer = time.time_ns()
 
         # variable to keep track of when to do sanity checks
         sanity_last_time = time.time()
