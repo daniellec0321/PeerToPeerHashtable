@@ -18,7 +18,9 @@ class P2PHashTableClient:
         self.ipAddress = None # IP of client --> where it can be reached
         self.port = None # What port the client can be reached at
 
-        # TODO: where to put open socket connections
+        self.inRing = False
+
+        # Where to put open socket connections
         self.sock = None
         self.conn = None
         self.stdinDesc = None
@@ -61,7 +63,7 @@ class P2PHashTableClient:
         self.highRange = 1001
         self.lowRange = 1000
         # rebalance data
-        if self.next and self.prev and self.next[1] != self.ipAddress and self.prev[1] != self.ipAddress:
+        if self.next and self.prev and (self.next[1] != self.ipAddress or self.next[2] != self.port) and (self.prev[1] != self.ipAddress or self.prev[2] != self.port):
             for key in self.ht.hash:
                 value = self.ht.hash[key]
                 userStream = 'insert {} {}'.format(key, value)
@@ -88,7 +90,7 @@ class P2PHashTableClient:
             self.startP2P()
         else:
             #Details contains the information for sockets in the name server
-            #TODO: Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
+            # Connect to Ring when there are other nodes in the ring --> contact first socket that connects requesting entry
             port = 0
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.bind((self.ipAddress,port))
@@ -117,19 +119,19 @@ class P2PHashTableClient:
             #No entries in the ring, so need to start 
             return False
         
-        #TODO: Check to see if any servers are available
+        # Check to see if any servers are available
         for entry in data:
             #Contact each of these servers to see if they are available/in the ring
             newSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 newSock.connect((entry['address'], entry['port']))
                 
-                #TODO: If connect succeeds, talk to connecting and get inserted into the ring
+                # If connect succeeds, talk to connecting and get inserted into the ring
                 #      When connect succeeds, locate server will return socket
                 newSock.close()
                 
                 #Gives dest_addr format --> don't have highRange yet
-                return (None, entry['address'], entry['port'])
+                return [None, entry['address'], entry['port']]
                 
             except:
                 #If error --> socket is no longer in ring, so continue to next iteration
@@ -165,12 +167,17 @@ class P2PHashTableClient:
         
         self.prev = [self.highRange, self.ipAddress, self.port]
         self.next = [self.highRange, self.ipAddress, self.port]
+        self.inRing = True
         
         self.sendToNameServer()
         self.readMessages()
 
     # check if next and previous are still the next and previous
     def sanityCheck(self):
+
+        # if it is only you in the ring, just return
+        if not self.prev or not self.next or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
+            return
 
         # send updatePrev to next
         prev_args = [self.highRange, self.ipAddress, self.port]
@@ -258,6 +265,8 @@ class P2PHashTableClient:
     # position: a string that is either 'prev' or 'next' and references whether the crashed node is the next or previous of ourselves.
     def handleCrash(self, crash_args, position):
 
+        print('Crash discovered, handling...')
+
         # case where there is only 1 node in the ring
         if not self.next or not self.prev or self.next[1] == self.prev[1] or self.next[1] == self.ipAddress or self.prev[1] == self.ipAddress:
             self.lowRange = self.highRange + UNIT
@@ -339,9 +348,9 @@ class P2PHashTableClient:
 
         while True:
 
-            # check if 5 seconds have passed and perform sanity check if necessary
+            # check if 3 seconds have passed and perform sanity check if necessary
             sanity_curr_time = time.time()
-            if (sanity_curr_time - sanity_last_time) > 5 and self.highRange: #Modify sanity check to only run if joined ring
+            if ((sanity_curr_time - sanity_last_time) > 3) and self.inRing:
                 sanity_last_time = sanity_curr_time
                 self.sanityCheck()
             
@@ -474,8 +483,6 @@ class P2PHashTableClient:
                             listen_list.remove(sock)
                                 
             except TimeoutError: #This exception is taken on timeout
-                #TODO: Define Exception for timeout
-                        
                 # self.sendToNameServer()
                 pass
         
@@ -489,36 +496,61 @@ class P2PHashTableClient:
         
         if 'method' in stream:
 
-            if stream['method'] == 'rebalance':
-                for key in self.ht.hash:
-                    userStream = 'insert {} {}'.format(key, self.ht.hash[key])
-                    self.performInsert(userStream=userStream)
-                # send acknowledge
-                msg = {'method': 'ack', 'message': 'Successful rebalance'}
-                self.send_msg(msg, stream['from'], True)
-
-            if stream['method'] == 'joinReq':
-
-                Remove everything from hashtable
+            if stream['method'] == 'saveAndRemove':
+                # put everything in your temp and then remove everything
                 self.TEMP = dict()
                 for key in self.ht.hash:
                     self.TEMP[key] = self.ht.hash[key]
                 for key in self.TEMP:
-                    userStream = 'remove {}'.format(key)
-                    self.performRemove(userStream=userStream)
+                    self.performRemove(userStream='remove {}'.format(key))
+                # send acknowledgement
+                msg = {'method': 'saveAndRemoveAck', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream['toForward']}
+                self.send_msg(msg, stream['from'])
 
-                #Handle adding node to the ring
-                msg = self.addToRing(stream['from'], stream)
+            elif stream['method'] == 'saveAndRemoveAck':
+                # node can now join the the thing
+                author = stream['toForward']['from']
+                msg = self.addToRing(author, stream['toForward'])
                 #Need to send message back
                 if msg:
-                    # TODO: failure check this send msg
-                    self.send_msg(msg, stream['from'], True)
+                    self.send_msg(msg, author, True)
+
+            elif stream['method'] == 'crashRebalance':
+                for key in self.ht.hash:
+                    self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
+                msg = {'method': 'ack', 'message': 'Successfully rebalanced', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, stream['from'])
+
+            elif stream['method'] == 'joinReq':
+
+                # check if I am the only node, and if so, just handle ring
+                if not self.next or not self.prev or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
+                    #Handle adding node to the ring
+                    msg = self.addToRing(stream['from'], stream)
+                    #Need to send message back
+                    if msg:
+                        # TODO: failure check this send msg
+                        self.send_msg(msg, stream['from'], True)
+
+
                 else:
-                    # add everything back into hashtable
-                    for key in self.TEMP:
-                        userStream = 'insert {} {}'.format(key, self.TEMP[key])
-                        self.performInsert(userStream=userStream)
-                    self.TEMP = dict()
+                    # Hash IP from join req.
+                    hashedIP = self.hashKey(stream['from'][1], True, stream['from'][2])
+                    # if it for me:
+                    if self.consultFingerTable(hashedIP, stream):
+                        # Remove everything from hashtable.
+                        self.TEMP = dict()
+                        for key in self.ht.hash:
+                            self.TEMP[key] = self.ht.hash[key]
+                        for key in self.TEMP:
+                            self.performRemove(userStream='remove {}'.format(key))
+                        # send message to previous to remove everything
+                        msg = {'method': 'saveAndRemove', 'from': [self.highRange, self.ipAddress, self.port], 'toForward': stream}
+                        self.send_msg(msg, self.prev)
+                    # if it isnt:
+                    else:
+                        # message has been forwarded
+                        pass
 
             elif stream['method'] == 'join':
 
@@ -528,17 +560,24 @@ class P2PHashTableClient:
                 self.fingerTable.addNode(stream['prev'])
                 self.highRange = stream['highRange']
                 self.lowRange = stream['lowRange']
-                # JSON dumps converts [()] to [[]] --> need to convert
                 self.fingerTable.ft = stream['ft']
                 
                 self.fingerTable.addNode(stream['from'])
                 
-                msg = {'method': 'ack', 'message': 'Successfully joined ring'}
-                self.send_msg(msg, stream['from'], True)
+                self.inRing = True
 
-                # send a rebalance request to your next
-                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                # send an insert from temp to next and prev
+                msg = {'method': 'insertFromTemp', 'from': [self.highRange, self.ipAddress, self.port]}
+                self.send_msg(msg, self.prev)
                 self.send_msg(msg, self.next)
+
+            elif stream['method'] == 'insertFromTemp':
+                # reinsert all values from temp
+                for key in self.ht.hash:
+                    self.performInsert(userStream='insert {} {}'.format(key, self.ht.hash[key]))
+                for key in self.TEMP:
+                    self.performInsert(userStream='insert {} {}'.format(key, self.TEMP[key]))
+                self.TEMP = dict()
 
             elif stream['method'] == 'findProcess':
                 self.performFindProcess(stream)
@@ -604,7 +643,7 @@ class P2PHashTableClient:
                     if stream['value'] == self.finalResult[1]:
                         self.exit = True
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
-                    #TODO: Check next node to see if key is there
+                    # Check next node to see if key is there
                     msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
                     self.send_msg(msg,stream['next'])
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None:
@@ -622,7 +661,7 @@ class P2PHashTableClient:
                 for key in self.ht.hash:
                     userStream = 'insert {} {}'.format(key, self.ht.hash[key])
                     self.performInsert(userStream=userStream)
-                msg = {'method': 'rebalance', 'from': [self.highRange, self.ipAddress, self.port]}
+                msg = {'method': 'crashRebalance', 'from': [self.highRange, self.ipAddress, self.port]}
                 self.send_msg(msg, stream['from'])
 
 
@@ -790,7 +829,7 @@ class P2PHashTableClient:
         else:
             return False
             
-        #TODO: Adding into ring when there are more than 2 members
+        # Adding into ring when there are more than 2 members
         #consultFingerTable will send this message to the appropriate source
                 
         #Once you have high Range --> get low range by consulting finger table
