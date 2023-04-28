@@ -41,7 +41,7 @@ class P2PHashTableClient:
         self.testFile = None
         self.finalResult = None
         
-        self.runTests = True
+        self.runTests = False
         self.messageCount = 0
         self.exit = False
 
@@ -336,9 +336,13 @@ class P2PHashTableClient:
         x = 0
         output = None
         
-        startTest = time.time_ns()
+        startTest = time.time()
+        if self.runTests:
+            startTest = time.time_ns()
         
-        intervalTimer = time.time_ns()
+        intervalTimer = time.time()
+        if self.runTests:
+            intervalTimer = time.time_ns()
 
         # variable to keep track of when to do sanity checks
         sanity_last_time = time.time()
@@ -640,7 +644,7 @@ class P2PHashTableClient:
                 # check if returning from a lookup
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
                     print('{}: {}'.format(stream['key'], stream['value']))
-                    if stream['value'] == self.finalResult[1]:
+                    if self.runTests and stream['value'] == self.finalResult[1]:
                         self.exit = True
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
                     # Check next node to see if key is there
