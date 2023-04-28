@@ -9,6 +9,7 @@ from FingerTable import FingerTable
 from HashTable import HashTable
 from faker import Faker
 import random
+import os
 
 UNIT = (2 * math.pi) / pow(2, 32)
 
@@ -37,6 +38,12 @@ class P2PHashTableClient:
 
         self.clean_exit = clean_exit
         self.TEMP = dict()
+        self.testFile = None
+        self.finalResult = None
+        
+        self.runTests = True
+        self.messageCount = 0
+        self.exit = False
 
         # TODO: run enter ring here
 
@@ -92,8 +99,9 @@ class P2PHashTableClient:
             self.port = self.sock.getsockname()[1]
             
             #Details contains a socket that you need to send a message to --> Send connection message
-            
-            if self.sendJoinRequest(details):
+            result = self.sendJoinRequest(details)
+
+            if result:
                 #If join request succeeds, send to name server and start reading messages
                 self.sendToNameServer()
                 self.readMessages()
@@ -136,21 +144,6 @@ class P2PHashTableClient:
     def startP2P(self):
         #This method creates the P2P system --> First Hash the IP addr
         
-        hashedIP = self.hashKey(self.ipAddress)
-        
-        # Max Hash for djb2 is 2^32 - 1
-        # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
-        ratio = hashedIP / (pow(2,32) - 1) 
-        
-        #Multiply ratio by 2pi radians to find its exact spot on the ring
-        location = ratio * 2 * math.pi
-
-        #Both ranges will be approx equal
-        self.highRange = location
-        
-        #Differentiates the range by the smallest fraction
-        self.lowRange = location + UNIT
-        
         #Start listening socket
         port = 0
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -158,6 +151,19 @@ class P2PHashTableClient:
         self.sock.listen()
         
         self.port = self.sock.getsockname()[1]
+        
+        hashedIP = self.hashKey(self.ipAddress, True, self.port)
+        
+        # Max Hash for djb2 is 2^32 - 1
+        # Calculate spot on circle by dividing hashedIP by (2^32 - 1)
+        
+        #Multiply ratio by 2pi radians to find its exact spot on the ring
+
+        #Both ranges will be approx equal
+        self.highRange = hashedIP
+        
+        #Differentiates the range by the smallest fraction
+        self.lowRange = hashedIP + UNIT
         
         self.prev = [self.highRange, self.ipAddress, self.port]
         self.next = [self.highRange, self.ipAddress, self.port]
@@ -246,7 +252,8 @@ class P2PHashTableClient:
 
         # Forward a message if it is not for you
         else:
-            hashedIP = self.hashKey(processArgs[p][1])
+
+            hashedIP = self.hashKey(processArgs[p][1], True, processArgs[p][2])
             if p == 'next':
                 self.consultFingerTable(hashedIP, processArgs, overshoot=False)
             else:
@@ -272,7 +279,7 @@ class P2PHashTableClient:
         self.fingerTable.delNode(crash_args[1])
 
         # hash ipaddress to find position
-        hashedIP = self.hashKey(crash_args[1])
+        hashedIP = self.hashKey(crash_args[1], True, crash_args[2])
 
         # Different functionalities for whether the crash is next or previous
         msg = {}
@@ -281,7 +288,7 @@ class P2PHashTableClient:
             msg = {'method': 'findProcess', 'next': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updateNext', 'next': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}]}
         else:
             # send update prev and range to next process
-            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange+UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
+            msg = {'method': 'findProcess', 'prev': crash_args, 'from': [self.highRange, self.ipAddress, self.port], 'toForward': [{'method': 'updatePrev', 'prev': [self.highRange, self.ipAddress, self.port], 'from': [self.highRange, self.ipAddress, self.port]}, {'method': 'updateRange', 'low': self.highRange + UNIT, 'high': -1, 'from': [self.highRange, self.ipAddress, self.port]}]}
 
         if self.consultFingerTable(hashedIP, msg):
             pass
@@ -327,7 +334,11 @@ class P2PHashTableClient:
         write_list = []
         exception_list = []
         x = 0
-        readTest = False
+        output = None
+        
+        startTest = time.time_ns()
+        
+        intervalTimer = time.time_ns()
 
         # variable to keep track of when to do sanity checks
         sanity_last_time = time.time()
@@ -351,17 +362,46 @@ class P2PHashTableClient:
             try:
                 read_sockets, write_sockets, error_sockets = select.select(listen_list, write_list, exception_list,0)
                 
-                '''
-                if not read_sockets and x == 0:
-                    x = 1
-                    self.testSystem()
-                    
-                elif not read_sockets and x == 1 and self.counter < 50:
-                    print(f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
-                    
-                    self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
-                    self.counter += 1
-                '''
+                #Allow 20 seconds before starting test to allow all nodes to join
+                if self.runTests:
+                    if not read_sockets and x == 0 and (time.time_ns() - startTest) / 1000000000 > 60:
+                        x = 1
+                        self.testSystem()
+                        
+                    elif not read_sockets and x == 1 and self.counter < 500:
+                        if self.counter == 0:
+                            start = time.time_ns()
+                            
+
+                        self.performInsert(userStream=f'insert {self.testInput[self.counter][0]} {self.testInput[self.counter][1]}')
+                        self.counter += 1
+                        
+                        if self.counter == 500:
+                            print(f'500 Copies Successfully Inserted\n')
+                        
+                    elif self.counter == 500 and (time.time_ns() - intervalTimer) / 1000000000 > 0.5:
+                        #Writing is complete
+                        intervalTimer = time.time_ns()
+                        #From here lookup the last result and see how long it takes to get self.lastResult[1]
+                        ret = self.performLookup(userStream=f'lookup {self.finalResult[0]}')
+                        if 'value' in ret and ret['value'] == self.finalResult[1]:
+                            self.exit = True
+                        
+                        
+                    elif self.exit and output == None:
+                        #Kill all processes 60 seconds after inserts are complete to avoid rebalancing messing with measurements
+                        #Write to file regarding how long this took
+                        end = time.time_ns()
+                        output = f'Inserting 500 elements completed & verified - Time Elapsed: {(end - start) / 1000000000} seconds - Message Count: {self.messageCount}\n'
+                        
+                        print(output)
+                        
+                        self.testFile.write(output)
+                        self.testFile.flush()
+                        os.fsync(self.testFile.fileno())
+                        
+                    if self.exit and (time.time_ns() - start) / 1000000000 > 30:
+                        sys.exit(0)
                 
                 for sock in read_sockets:
                     
@@ -396,6 +436,9 @@ class P2PHashTableClient:
                             
                         elif i.lower() == 'exit':
                             sys.exit(0)
+                            
+                        elif i.lower() == 'test':
+                            self.test = True
 
                         elif i == 'sanity check':
                             self.sanityCheck()
@@ -429,10 +472,14 @@ class P2PHashTableClient:
 
                         #Parse Data
                         if(stream):
+                            self.messageCount += 1
+                            #TODO: Define Way to parse stream
+
                             # print('Message Recieved: ', stream)
                             # print(stream)
                             self.conn.close()
                             self.parseStream(stream, msg_length)
+                            self.messageCount += 1
                             listen_list.remove(sock)
                                 
             except TimeoutError: #This exception is taken on timeout
@@ -506,6 +553,7 @@ class P2PHashTableClient:
                         pass
 
             elif stream['method'] == 'join':
+
                 self.next = stream['next']
                 self.fingerTable.addNode(stream['next'])
                 self.prev = stream['prev']
@@ -592,6 +640,8 @@ class P2PHashTableClient:
                 # check if returning from a lookup
                 if stream['message'] == 'Result of lookup' and stream['value'] is not None:
                     print('{}: {}'.format(stream['key'], stream['value']))
+                    if stream['value'] == self.finalResult[1]:
+                        self.exit = True
                 elif stream['message'] == 'Result of lookup' and stream['value'] is None and 'next' in stream:
                     # Check next node to see if key is there
                     msg = {'method': 'lookup', 'key': stream['key'], 'triedNext': True, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -736,12 +786,13 @@ class P2PHashTableClient:
         
     def addToRing(self, details, msg):
         #To add node to ring need to hashIP
-        hashedIP = self.hashKey(details[1])
+
+        hashedIP = self.hashKey(details[1], True, details[2])
         highRange = hashedIP
         
         #If fingertable is empty, then this is the second node joining so can just add to it
         if self.consultFingerTable(highRange,msg):
-            self.fingerTable.addNode((highRange, details[1], details[2]))
+            self.fingerTable.addNode([highRange, details[1], details[2]])
             
             #After adding finger table, need to get low range by communicating with assigned nextNode which will be who sends you the message
             
@@ -755,7 +806,6 @@ class P2PHashTableClient:
                 lowRange = self.prev[0] + UNIT
                 
                 self.prev = [highRange, details[1], details[2]]
-                self.fingerTable.addNode(self.prev)
                 #More than 2 members
                 #Need to update prev next
                 self.sendUpdateNext([highRange, details[1], details[2]], prev)
@@ -768,14 +818,13 @@ class P2PHashTableClient:
                 #Set next and prev as this node
                 prev = self.prev
                 next = [self.highRange, self.ipAddress, self.port]
-                self.prev = [highRange, details[1], details[2]]
                 self.fingerTable.addNode(self.prev)
             
                 self.next = [highRange, details[1], details[2]]
                 self.fingerTable.addNode(self.next)
                 
             
-            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': (self.highRange, self.ipAddress, self.port)}
+            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
         
         else:
             return False
@@ -822,7 +871,7 @@ class P2PHashTableClient:
             #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             return not self.forwardMessage(msg, position, overshoot)
     
-    def hashKey(self, key):
+    def hashKey(self, key, ip=False, port=None):
         #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
         # NOTE: Max Hash -->  2^{32} - 1 = 4,294,967,295
         
@@ -849,6 +898,9 @@ class P2PHashTableClient:
             except:
                 keyn1 = ord(key[-1])
             a = a * (key0 + 1) * (keyn1 * 9999 + 1 )
+            if ip:
+                #If ip address multiply a by port number to allow using the same ip address for multiple instances
+                a = a * port * 2499
             a = a % (pow(2,32) - 1)
             a = a / (pow(2, 32) - 1)
             a = a * 2 * math.pi
@@ -1016,9 +1068,15 @@ class P2PHashTableClient:
         #Prepare arguments to be passed to client
         #
         f = Faker()
-        for i in range(50):
-            l = [f.name().replace(' ',''), f.name().replace(' ','')]
+        for i in range(500):
+            l = [f.text().replace(' ','').replace('\n',''), f.name().replace(' ','')]
             self.testInput.append(l)
+            
+        #Fetch last result to know when all data has been inputted
+        self.finalResult = self.testInput[-1]
+           
+        numClients = 10
+        self.testFile = open(f'tests/{self.ipAddress}/outputs-{numClients}.txt', 'a')
 
 if __name__ == '__main__':
     client = P2PHashTableClient()

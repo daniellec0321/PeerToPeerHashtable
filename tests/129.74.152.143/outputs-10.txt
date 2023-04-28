@@ -1,0 +1,2 @@
+Inserting 500 elements completed & verified - Time Elapsed: 0.166712222 seconds - Message Count: 1284
+Inserting 500 elements completed & verified - Time Elapsed: 0.159775604 seconds - Message Count: 1392
