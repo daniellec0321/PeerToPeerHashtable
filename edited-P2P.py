@@ -16,7 +16,7 @@ UNIT = (2 * math.pi) / pow(2, 32)
 
 class P2PHashTableClient:
 
-    def __init__(self, clean_exit=True):
+    def __init__(self, projectName='begloff-project', clean_exit=True):
 
         # IP address and port of the client
         self.ipAddress = None
@@ -31,7 +31,7 @@ class P2PHashTableClient:
         self.stdinDesc = None
         
         # Project name to find in naming service
-        self.projectName = None
+        self.projectName = projectName
         
         # Node's internal hashtable
         self.ht = HashTable()
@@ -58,7 +58,8 @@ class P2PHashTableClient:
         self.messageCount = 0
         self.exit = False
 
-        # TODO: run enter ring here
+        # Begin the ring
+        self.enterRing()
 
 
 
@@ -94,7 +95,7 @@ class P2PHashTableClient:
     
     
     # When a node has requested to join the ring
-    def enterRing(self, projectName):
+    def enterRing(self, projectName='begloff-project'):
         
         # Fetch IP and store in ipAddress variable
         ip = requests.get('http://icanhazip.com')
@@ -798,80 +799,73 @@ class P2PHashTableClient:
 
 
         
+    # Function to add a node to the ring
     def addToRing(self, details, msg):
-        #To add node to ring need to hashIP
 
+        # Hash the given IP to find the position
         hashedIP = self.hashKey(details[1], True, details[2])
         highRange = hashedIP
         
-        #If fingertable is empty, then this is the second node joining so can just add to it
+        # Check if this node is my responsibility
         if self.consultFingerTable(highRange,msg):
+
+            # Add the node to our fing
             self.fingerTable.addNode([highRange, details[1], details[2]])
             
-            #After adding finger table, need to get low range by communicating with assigned nextNode which will be who sends you the message
-            
+            # For the case where there are two or more nodes in the ring
             if self.prev != [self.highRange, self.ipAddress, self.port]:
-                self.lowRange = highRange + UNIT
-                
+
+                # Set incoming node's parameters
                 next = [self.highRange, self.ipAddress, self.port]
-                
                 prev = self.prev
-                
                 lowRange = self.prev[0] + UNIT
-                
+
+                # Update my internal variables
+                self.lowRange = highRange + UNIT
                 self.prev = [highRange, details[1], details[2]]
-                #More than 2 members
-                #Need to update prev next
                 self.sendUpdateNext([highRange, details[1], details[2]], prev)
 
-            else: #2 members
-                self.lowRange = highRange + UNIT
+            # There is currently only one member in the ring
+            else:
                 
+                # Set incoming node parameters
                 lowRange = self.highRange + UNIT
-                
-                #Set next and prev as this node
                 prev = self.prev
                 next = [self.highRange, self.ipAddress, self.port]
+
+                # Update my parameters
+                self.lowRange = highRange + UNIT
                 self.fingerTable.addNode(self.prev)
-            
                 self.next = [highRange, details[1], details[2]]
                 self.fingerTable.addNode(self.next)
                 
-            
+            # Return message with information to join
             return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
         
+        # Not my responsibility, so return false
         else:
             return False
             
-        # Adding into ring when there are more than 2 members
-        #consultFingerTable will send this message to the appropriate source
-                
-        #Once you have high Range --> get low range by consulting finger table
-        # It will send the new node’s position in the ring, a copy of the process’ finger table, the new node’s previous process, and the new node’s next process
-        
-        # Need to send back to the node highRange, lowRange, next, prev
-    
 
     
+    # A function to determine whether a given message is your responsibility
     def consultFingerTable(self, position, msg, overshoot=True):
-        #In this function, consult your own finger table and see if you are responsible for message: other wise forward to other node
         
-        # delete yourself, add your previous and next to finger table
+        # Just in case: add previous and next to finger table and delete yourself
         self.fingerTable.addNode(self.next)
         self.fingerTable.addNode(self.prev)
         self.fingerTable.delNode(self.ipAddress)
 
-        # if finger table is empty, then you are responsible
+        # If finger table is empty, then you are responsible
         if len(self.fingerTable.ft) <= 0:
             return True
 
-        #FIRST SEE IF YOU ARE RESPONSIBLE
         elif self.highRange < self.lowRange:
-            #Need to check between high & 0 and 0 & low
             if 0 <= position <= self.highRange:
                 return True
             elif self.lowRange <= position <= 2 * math.pi:
                 return True
+            # Not responsible for this, so forward message
             else:
                 return not self.forwardMessage(msg, position, overshoot)
             
@@ -881,26 +875,21 @@ class P2PHashTableClient:
         elif self.lowRange == self.highRange:
             return True
             
+        # Not responsible for this, so forward message
         else:
-            #YOU ARE NOT RESPONSIBLE FOR THIS INSERT/JOIN --> Call forwardMessage
             return not self.forwardMessage(msg, position, overshoot)
-    
+   
+
+
+    # Given a key or IP, provide a hash between 0 and 2pi
+    # This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
+    # Max Hash -->  2^{32} - 1 = 4,294,967,295
     def hashKey(self, key, ip=False, port=None):
-        #This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
-        # NOTE: Max Hash -->  2^{32} - 1 = 4,294,967,295
-        
-        #Need to modify hashing algorithm to more evenly distribute these nodes
-        
         try:
-        
             hashedKey = 5381
-            
             for x in key:
                 hashedKey = (( hashedKey << 5) + hashedKey) + ord(x)
-            
             a = hashedKey & 0xFFFFFFFF
-            
-            #Self entered to try and diversify ip hashes
             key0 = None
             key1 = None
             try:
@@ -913,40 +902,34 @@ class P2PHashTableClient:
                 keyn1 = ord(key[-1])
             a = a * (key0 + 1) * (keyn1 * 9999 + 1 )
             if ip:
-                #If ip address multiply a by port number to allow using the same ip address for multiple instances
                 a = a * port * 2499
             a = a % (pow(2,32) - 1)
             a = a / (pow(2, 32) - 1)
             a = a * 2 * math.pi
             return a
-
-        except: #Catch non strings and record as errors
+        # Catch non-strings as errors
+        except:
             return False
 
 
 
-    # In a successful case, return the message received. Otherwise, need to decide what semantics we will have for failure messages
-    # msg: json message to send
-    # dest_args: a tuple representing where the message should go
-    # ack: a bool specifying whether we are sending an acknowledgement or not--if sending acknowledgement, don't need to wait for response
-    # adj: a bool specifying if the destination is adjancent to the sender in the ring. If it is, then a failed response means there is a crash.
-    # RETURNS A JSON MESSAGE
+    # Given a message and a destination, send a message
     def send_msg(self, msg, dest_args, ack=False):
 
-        # msg MUST be a dictionary already ready for sending
+        # Check if message is not a dictionary
         if not type(msg) is dict:
             return {'status': 'failure', 'message': 'message sent to function was not a dictionary'}
 
-        # if destargs is none, return failure
+        # Check if dest args is not specified
         if not dest_args:
             return {'status': 'failure', 'message': 'dest_args not specified'}
 
-        # connect to destination
+        # Attempt to connect to destination
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             sock.connect((dest_args[1], dest_args[2]))
         except:
-            # try 5 times, then send failure
+            # If unsuccessful connection, try again while waiting
             success = False
             wait = 0.01
             while wait <= 0.1:
@@ -958,18 +941,18 @@ class P2PHashTableClient:
                 except:
                     pass
                 wait += 0.01
-            # handle a failure to respond
+            # If never got to connection, return failure
             if success == False:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
-        # send message
+        # Attempt to send message
         json_msg = json.dumps(msg)
         msg_length = len(json_msg).to_bytes(4, byteorder='big')
         try:
             sock.sendall(msg_length + json_msg.encode())
         except:
-            # try 5 times, then send failure
+            # If unsuccessful send, try again while waiting
             success = False
             wait = 0.01
             while wait <= 0.1:
@@ -981,20 +964,18 @@ class P2PHashTableClient:
                 except:
                     pass
                 wait += 0.01
-            # handle a failure to respond
+            # If never got to send, return failure
             if success == False:
                 self.fingerTable.delNode(dest_args[1])
                 return {'status': 'failure', 'message': 'destination not responding'}
 
-        # return
+        # Close socket and return success
         sock.close()
         return {'status': 'success'}
 
 
 
-    # next_args: a tuple containing the arguments that the destination should set as its next
-    # dest_args: a tuple containing the arguments of where the message should be sent
-    # Returns a boolean of whether the update succeeded or not
+    # Send a message to a destination to update their next pointer
     def sendUpdateNext(self, next_args, dest_args):
         msg = {'method': 'updateNext', 'next': next_args, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
@@ -1002,62 +983,61 @@ class P2PHashTableClient:
             return False
         return True
 
-    # prev_args: a tuple containing the arguments that the destination should set as its prev
-    # dest_args: a tuple containing the arguments of where the message should be sent
-    # Returns a boolean of whether the update succeeded or not
-    def sendUpdatePrev(self, prev_args, dest_args):
 
+
+    # Send a message to a destination to update their previous pointer
+    def sendUpdatePrev(self, prev_args, dest_args):
         msg = {'method': 'updatePrev', 'prev': prev_args, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
         
-    # high: a number containing the value of the 'high' range
-    # low: a number containing the value of the 'low' range
-    # dest_args: a tuple containing the arguments of where the message should be sent
-    # Returns a boolean of whether the update succeeded or not
-    def sendUpdateRange(self, high, low, dest_args):
 
+
+    # Send a message to a destination to update their range of control
+    def sendUpdateRange(self, high, low, dest_args):
         msg = {'method': 'updateRange', 'high': high, 'low': low, 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args)
         if ret_msg['status'] == 'failure':
             return False
         return True
 
+
+
+    # Send a request to join the ring
     def sendJoinRequest(self, dest_args):
-        
         msg = {'method': 'joinReq', 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args, True)
         return ret_msg
 
+
+
+    # Send project to the name server
     def sendToNameServer(self):
-        #Send an update to the name server describing server
-            
-        #Define message
         jsonMessage = dict()
         jsonMessage["type"] = "p2phashtable"
         jsonMessage["owner"] = "begloff"
         jsonMessage["port"] = self.port
         jsonMessage["project"] = self.projectName
-        
         jsonMessage = str(json.dumps(jsonMessage))
-
         h = socket.gethostbyname("catalog.cse.nd.edu")
-        
         nameServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
-        #FOR SOME REASON 9098 works but 9097 doesn't??????
         nameServer.connect((h, 9097 + 1))
-        #Send Desc to name server
         nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
 
+
+
+    # Print status of a node to the terminal for debugging purposes
     def debug(self):
         print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}, ip address: {self.ipAddress}')
         print('my hashtable is:')
         for key in self.ht.hash:
             print('{}: {}'.format(key, self.ht.hash[key]))
             
+
+
+    # Printing to the user how to use the system
     def usage(self):
         print('\nP2PHashTable Usage:')
         print('  Insert [key] [value]')
@@ -1065,8 +1045,10 @@ class P2PHashTableClient:
         print('  Remove [key]')
         print('  Exit/Ctrl-c to quit\n')
 
-    def updateHashTable(self, method, key, value=None):
 
+
+    # Updating a node's current hashtable
+    def updateHashTable(self, method, key, value=None):
         if method == 'insert':
             self.ht.insert(key, value)
             return True
@@ -1078,22 +1060,28 @@ class P2PHashTableClient:
         else:
             return False
 
+
+
+    # Function to test the latency/throughput of the system
     def testSystem(self):
-        #Prepare arguments to be passed to client
-        #
         f = Faker()
         for i in range(500):
             l = [f.text().replace(' ','').replace('\n',''), f.name().replace(' ','')]
             self.testInput.append(l)
-            
-        #Fetch last result to know when all data has been inputted
         self.finalResult = self.testInput[-1]
-           
         numClients = 10
         self.testFile = open(f'tests/{self.ipAddress}/outputs-{numClients}.txt', 'a')
 
+
+
+# Main Function
 if __name__ == '__main__':
-    client = P2PHashTableClient()
-    client.enterRing('begloff-project')
-        
-    
+    cleanExit = True
+    if len(sys.argv) == 2:
+        try:
+            cleanExit = bool(int(sys.argv[1]))
+        except:
+            print(f'{sys.argv[1]} is not a valid flag for \'cleanExit\'.')
+            sys.exit(1)
+    projectName = 'dcroft-project'
+    client = P2PHashTableClient(clean_exit=cleanExit, projectName=projectName)
