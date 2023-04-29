@@ -8,6 +8,7 @@ locateServer
 sendToNameServer
 startP2P
 enterRing
+sendJoinRequest
 addToRing
 send_msg
 readMessages
