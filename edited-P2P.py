@@ -92,8 +92,146 @@ class P2PHashTableClient:
                 self.performInsert(userStream=userStream)
         print('Program finished exiting.')
     
-    
-    
+  
+
+    # Updating a node's current hashtable
+    def updateHashTable(self, method, key, value=None):
+        if method == 'insert':
+            self.ht.insert(key, value)
+            return True
+        elif method == 'remove':
+            self.ht.remove(key)
+            return True
+        elif method == 'lookup':
+            return self.ht.lookup(key)
+        else:
+            return False
+
+
+
+    # Given a key or IP, provide a hash between 0 and 2pi
+    # This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
+    # Max Hash -->  2^{32} - 1 = 4,294,967,295
+    def hashKey(self, key, ip=False, port=None):
+        try:
+            hashedKey = 5381
+            for x in key:
+                hashedKey = (( hashedKey << 5) + hashedKey) + ord(x)
+            a = hashedKey & 0xFFFFFFFF
+            key0 = None
+            key1 = None
+            try:
+                key0 = int(key[0])
+            except:
+                key0 = ord(key[0])
+            try:
+                keyn1 = int(key[-1])
+            except:
+                keyn1 = ord(key[-1])
+            a = a * (key0 + 1) * (keyn1 * 9999 + 1 )
+            if ip:
+                a = a * port * 2499
+            a = a % (pow(2,32) - 1)
+            a = a / (pow(2, 32) - 1)
+            a = a * 2 * math.pi
+            return a
+        # Catch non-strings as errors
+        except:
+            return False
+
+
+
+    # Printing to the user how to use the system
+    def usage(self):
+        print('\nP2PHashTable Usage:')
+        print('  Insert [key] [value]')
+        print('  Lookup [key]')
+        print('  Remove [key]')
+        print('  Exit/Ctrl-c to quit\n')
+
+
+
+    # Print status of a node to the terminal for debugging purposes
+    def debug(self):
+        print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}, ip address: {self.ipAddress}')
+        print('my hashtable is:')
+        for key in self.ht.hash:
+            print('{}: {}'.format(key, self.ht.hash[key]))
+
+
+
+    # Finding a valid node on the ND naming service
+    def locateServer(self):
+        
+        # Contact and parse naming service
+        data = requests.get("http://catalog.cse.nd.edu:9097/query.json")
+        data = data.json()
+        data = list(filter( lambda x: "type" in x and "project" in x and x["type"] == "p2phashtable" and x["project"] == self.projectName, data))
+        
+        # No valid entries in name server
+        if not data:
+            return False
+        
+        # Loop through nodes and attempt to connect
+        for entry in data:
+            newSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                # If connect succeeds, record contact information and return
+                newSock.connect((entry['address'], entry['port']))
+                newSock.close()
+                return [None, entry['address'], entry['port']]
+            # If there is an error, then that node is no longer in the ring
+            except:
+                continue
+        
+        # All nodes in the nameserver are invalid
+        return False
+
+
+
+    # Send project to the name server
+    def sendToNameServer(self):
+        jsonMessage = dict()
+        jsonMessage["type"] = "p2phashtable"
+        jsonMessage["owner"] = "begloff"
+        jsonMessage["port"] = self.port
+        jsonMessage["project"] = self.projectName
+        jsonMessage = str(json.dumps(jsonMessage))
+        h = socket.gethostbyname("catalog.cse.nd.edu")
+        nameServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        nameServer.connect((h, 9097 + 1))
+        nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
+
+
+
+    # Initializes a P2P System
+    def startP2P(self):
+        
+        # Start listening socket and get port
+        port = 0
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind((self.ipAddress,port))
+        self.sock.listen()
+        self.port = self.sock.getsockname()[1]
+        
+        # Hash IP Address + port to get position on ring
+        hashedIP = self.hashKey(self.ipAddress, True, self.port)
+        self.highRange = hashedIP
+        self.lowRange = hashedIP + UNIT
+        
+        # Set previous and next be ourselves
+        self.prev = [self.highRange, self.ipAddress, self.port]
+        self.next = [self.highRange, self.ipAddress, self.port]
+
+        # We are now in the ring
+        self.inRing = True
+        
+        # Send to name server and begin listening for messages
+        self.sendToNameServer()
+        self.readMessages()
+
+
+
     # When a node has requested to join the ring
     def enterRing(self, projectName='begloff-project'):
         
@@ -125,65 +263,57 @@ class P2PHashTableClient:
             if result:
                 self.sendToNameServer()
                 self.readMessages()
-                        
 
         
-    # Finding a valid node on the ND naming service
-    def locateServer(self):
+
+    # Function to add a node to the ring
+    def addToRing(self, details, msg):
+
+        # Hash the given IP to find the position
+        hashedIP = self.hashKey(details[1], True, details[2])
+        highRange = hashedIP
         
-        # Contact and parse naming service
-        data = requests.get("http://catalog.cse.nd.edu:9097/query.json")
-        data = data.json()
-        data = list(filter( lambda x: "type" in x and "project" in x and x["type"] == "p2phashtable" and x["project"] == self.projectName, data))
+        # Check if this node is my responsibility
+        if self.consultFingerTable(highRange,msg):
+
+            # Add the node to our fing
+            self.fingerTable.addNode([highRange, details[1], details[2]])
+            
+            # For the case where there are two or more nodes in the ring
+            if self.prev != [self.highRange, self.ipAddress, self.port]:
+
+                # Set incoming node's parameters
+                next = [self.highRange, self.ipAddress, self.port]
+                prev = self.prev
+                lowRange = self.prev[0] + UNIT
+
+                # Update my internal variables
+                self.lowRange = highRange + UNIT
+                self.prev = [highRange, details[1], details[2]]
+                self.sendUpdateNext([highRange, details[1], details[2]], prev)
+
+            # There is currently only one member in the ring
+            else:
+                
+                # Set incoming node parameters
+                lowRange = self.highRange + UNIT
+                prev = self.prev
+                next = [self.highRange, self.ipAddress, self.port]
+
+                # Update my parameters
+                self.lowRange = highRange + UNIT
+                self.fingerTable.addNode(self.prev)
+                self.next = [highRange, details[1], details[2]]
+                self.fingerTable.addNode(self.next)
+                
+            # Return message with information to join
+            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
         
-        # No valid entries in name server
-        if not data:
+        # Not my responsibility, so return false
+        else:
             return False
-        
-        # Loop through nodes and attempt to connect
-        for entry in data:
-            newSock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                # If connect succeeds, record contact information and return
-                newSock.connect((entry['address'], entry['port']))
-                newSock.close()
-                return [None, entry['address'], entry['port']]
-            # If there is an error, then that node is no longer in the ring
-            except:
-                continue
-        
-        # All nodes in the nameserver are invalid
-        return False
-        
-
+            
     
-    # Initializes a P2P System
-    def startP2P(self):
-        
-        # Start listening socket and get port
-        port = 0
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.bind((self.ipAddress,port))
-        self.sock.listen()
-        self.port = self.sock.getsockname()[1]
-        
-        # Hash IP Address + port to get position on ring
-        hashedIP = self.hashKey(self.ipAddress, True, self.port)
-        self.highRange = hashedIP
-        self.lowRange = hashedIP + UNIT
-        
-        # Set previous and next be ourselves
-        self.prev = [self.highRange, self.ipAddress, self.port]
-        self.next = [self.highRange, self.ipAddress, self.port]
-
-        # We are now in the ring
-        self.inRing = True
-        
-        # Send to name server and begin listening for messages
-        self.sendToNameServer()
-        self.readMessages()
-
-
 
     # Check if previous and next are still alive
     def sanityCheck(self):
@@ -797,56 +927,7 @@ class P2PHashTableClient:
             else:
                 pass
 
-
         
-    # Function to add a node to the ring
-    def addToRing(self, details, msg):
-
-        # Hash the given IP to find the position
-        hashedIP = self.hashKey(details[1], True, details[2])
-        highRange = hashedIP
-        
-        # Check if this node is my responsibility
-        if self.consultFingerTable(highRange,msg):
-
-            # Add the node to our fing
-            self.fingerTable.addNode([highRange, details[1], details[2]])
-            
-            # For the case where there are two or more nodes in the ring
-            if self.prev != [self.highRange, self.ipAddress, self.port]:
-
-                # Set incoming node's parameters
-                next = [self.highRange, self.ipAddress, self.port]
-                prev = self.prev
-                lowRange = self.prev[0] + UNIT
-
-                # Update my internal variables
-                self.lowRange = highRange + UNIT
-                self.prev = [highRange, details[1], details[2]]
-                self.sendUpdateNext([highRange, details[1], details[2]], prev)
-
-            # There is currently only one member in the ring
-            else:
-                
-                # Set incoming node parameters
-                lowRange = self.highRange + UNIT
-                prev = self.prev
-                next = [self.highRange, self.ipAddress, self.port]
-
-                # Update my parameters
-                self.lowRange = highRange + UNIT
-                self.fingerTable.addNode(self.prev)
-                self.next = [highRange, details[1], details[2]]
-                self.fingerTable.addNode(self.next)
-                
-            # Return message with information to join
-            return {'method': 'join', 'next': next, 'prev': prev, 'highRange': highRange, 'lowRange': lowRange, 'ft': self.fingerTable.ft, 'from': [self.highRange, self.ipAddress, self.port]}
-        
-        # Not my responsibility, so return false
-        else:
-            return False
-            
-
     
     # A function to determine whether a given message is your responsibility
     def consultFingerTable(self, position, msg, overshoot=True):
@@ -879,38 +960,6 @@ class P2PHashTableClient:
         else:
             return not self.forwardMessage(msg, position, overshoot)
    
-
-
-    # Given a key or IP, provide a hash between 0 and 2pi
-    # This hashing algorithm is djb2 source: http://www.cse.yorku.ca/~oz/hash.html
-    # Max Hash -->  2^{32} - 1 = 4,294,967,295
-    def hashKey(self, key, ip=False, port=None):
-        try:
-            hashedKey = 5381
-            for x in key:
-                hashedKey = (( hashedKey << 5) + hashedKey) + ord(x)
-            a = hashedKey & 0xFFFFFFFF
-            key0 = None
-            key1 = None
-            try:
-                key0 = int(key[0])
-            except:
-                key0 = ord(key[0])
-            try:
-                keyn1 = int(key[-1])
-            except:
-                keyn1 = ord(key[-1])
-            a = a * (key0 + 1) * (keyn1 * 9999 + 1 )
-            if ip:
-                a = a * port * 2499
-            a = a % (pow(2,32) - 1)
-            a = a / (pow(2, 32) - 1)
-            a = a * 2 * math.pi
-            return a
-        # Catch non-strings as errors
-        except:
-            return False
-
 
 
     # Given a message and a destination, send a message
@@ -1010,55 +1059,6 @@ class P2PHashTableClient:
         msg = {'method': 'joinReq', 'from': [self.highRange, self.ipAddress, self.port]}
         ret_msg = self.send_msg(msg, dest_args, True)
         return ret_msg
-
-
-
-    # Send project to the name server
-    def sendToNameServer(self):
-        jsonMessage = dict()
-        jsonMessage["type"] = "p2phashtable"
-        jsonMessage["owner"] = "begloff"
-        jsonMessage["port"] = self.port
-        jsonMessage["project"] = self.projectName
-        jsonMessage = str(json.dumps(jsonMessage))
-        h = socket.gethostbyname("catalog.cse.nd.edu")
-        nameServer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        nameServer.connect((h, 9097 + 1))
-        nameServer.sendall(bytes(jsonMessage, encoding='utf-8'))
-
-
-
-    # Print status of a node to the terminal for debugging purposes
-    def debug(self):
-        print(f'DEBUG: prev: {self.prev}, next: {self.next}, FT: {self.fingerTable.ft}, highRange: {self.highRange}, lowRange: {self.lowRange}, ip address: {self.ipAddress}')
-        print('my hashtable is:')
-        for key in self.ht.hash:
-            print('{}: {}'.format(key, self.ht.hash[key]))
-            
-
-
-    # Printing to the user how to use the system
-    def usage(self):
-        print('\nP2PHashTable Usage:')
-        print('  Insert [key] [value]')
-        print('  Lookup [key]')
-        print('  Remove [key]')
-        print('  Exit/Ctrl-c to quit\n')
-
-
-
-    # Updating a node's current hashtable
-    def updateHashTable(self, method, key, value=None):
-        if method == 'insert':
-            self.ht.insert(key, value)
-            return True
-        elif method == 'remove':
-            self.ht.remove(key)
-            return True
-        elif method == 'lookup':
-            return self.ht.lookup(key)
-        else:
-            return False
 
 
 
