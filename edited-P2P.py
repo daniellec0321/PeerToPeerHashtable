@@ -269,7 +269,7 @@ class P2PHashTableClient:
     # Send a request to join the ring
     def sendJoinRequest(self, dest_args):
         msg = {'method': 'joinReq', 'from': [self.highRange, self.ipAddress, self.port]}
-        ret_msg = self.send_msg(msg, dest_args, True)
+        ret_msg = self.send_msg(msg, dest_args)
         return ret_msg
 
         
@@ -324,7 +324,7 @@ class P2PHashTableClient:
    
 
     # Given a message and a destination, send a message
-    def send_msg(self, msg, dest_args, ack=False):
+    def send_msg(self, msg, dest_args):
 
         # Check if message is not a dictionary
         if not type(msg) is dict:
@@ -373,6 +373,10 @@ class P2PHashTableClient:
                     break
                 except:
                     pass
+
+        # Close and return success
+        sock.close()
+        return {'status': 'success'}
 
 
 
@@ -558,7 +562,7 @@ class P2PHashTableClient:
             author = stream['toForward']['from']
             msg = self.addToRing(author, stream['toForward'])
             if msg:
-                self.send_msg(msg, author, True)
+                self.send_msg(msg, author)
 
         # Command to rebalance the ring after a crash
         elif stream['method'] == 'crashRebalance':
@@ -574,7 +578,7 @@ class P2PHashTableClient:
             if not self.next or not self.prev or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
                 msg = self.addToRing(stream['from'], stream)
                 if msg:
-                    self.send_msg(msg, stream['from'], True)
+                    self.send_msg(msg, stream['from'])
 
             # Multiple nodes in ring, so must perform some rebalancing or forward message
             else:
@@ -629,14 +633,14 @@ class P2PHashTableClient:
             self.next = stream['next']
             self.fingerTable.addNode(stream['next'])
             msg = {'method': 'ack', 'message': 'Successfully updated next pointer'}
-            self.send_msg(msg, stream['from'], True)
+            self.send_msg(msg, stream['from'])
             
         # Command to update previous pointer
         elif stream['method'] == 'updatePrev':
             self.prev = stream['prev']
             self.fingerTable.addNode(stream['prev'])
             msg = {'method': 'ack', 'message': 'Successfully updated prev pointer'}
-            self.send_msg(msg, stream['from'], True)
+            self.send_msg(msg, stream['from'])
                 
         # Command to update range of control
         elif stream['method'] == 'updateRange':
@@ -645,12 +649,12 @@ class P2PHashTableClient:
             if stream['high'] >= 0:
                 self.highRange = stream['high']
             msg = {'method': 'ack', 'message': 'Successfully updated range'}
-            self.send_msg(msg, stream['from'], True)
+            self.send_msg(msg, stream['from'])
             
         # Send information of previous pointer
         elif stream['method'] == 'getLow':
             msg = {'method': 'ack', 'prev': self.prev, 'message': 'successfully retrieved prev info'}
-            self.send_msg(msg, stream['from'], True)
+            self.send_msg(msg, stream['from'])
 
         # Command to insert a value
         elif stream['method'] == 'insert':
@@ -755,7 +759,7 @@ class P2PHashTableClient:
         # Try to send message while there are processes in the ring
         while len(self.fingerTable.ft) > 0:
             proc = self.fingerTable.findProcess(position, overshoot)
-            ret = self.send_msg(msg, proc, True)
+            ret = self.send_msg(msg, proc)
             # Check return status of send message
             if ret['status'] == 'failure':
                 continue
@@ -1015,7 +1019,7 @@ class P2PHashTableClient:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated next pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated next pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
-                    self.send_msg(msg, processArgs['from'], True)
+                    self.send_msg(msg, processArgs['from'])
 
                 # Update previous node
                 if func['method'] == 'updatePrev':
@@ -1027,7 +1031,7 @@ class P2PHashTableClient:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated prev pointer', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
-                    self.send_msg(msg, processArgs['from'], True)
+                    self.send_msg(msg, processArgs['from'])
 
                 # Update my range
                 if func['method'] == 'updateRange':
@@ -1041,7 +1045,7 @@ class P2PHashTableClient:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated range', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updatePrevAndRange'}
                     else:
                         msg = {'method': 'crashAcknowledge', 'message': 'Successfully updated range', 'from': [self.highRange, self.ipAddress, self.port], 'todo': 'updateNext'}
-                    self.send_msg(msg, processArgs['from'], True)
+                    self.send_msg(msg, processArgs['from'])
 
         # Forward a message that is not meant for me
         else:
