@@ -376,57 +376,6 @@ class P2PHashTableClient:
 
 
 
-    # Check if previous and next are still alive
-    def sanityCheck(self):
-
-        # Return if no other node in ring
-        if not self.prev or not self.next or (self.prev[1] == self.ipAddress and self.prev[2] == self.port) or (self.next[1] == self.ipAddress and self.next[2] == self.port):
-            return
-
-        # Sending dummy update previous to next
-        prev_args = [self.highRange, self.ipAddress, self.port]
-        dest_args = self.next
-        ret = self.sendUpdatePrev(prev_args, dest_args)
-        # If no response, then crash occurred
-        if ret == False:
-            self.handleCrash(dest_args, 'next')
-
-        # Sending dummy update next to previous
-        next_args = [self.highRange, self.ipAddress, self.port]
-        dest_args = self.prev
-        ret = self.sendUpdateNext(next_args, dest_args)
-        # If no response, then crash occurred
-        if ret == False:
-            self.handleCrash(dest_args, 'prev')
-
-
-
-    # Forward a message to another node
-    def forwardMessage(self, msg, position, overshoot=True):
-        
-        # If finger table is empty, then there is an error
-        if len(self.fingerTable.ft) <= 0:
-            print('An error occurred.')
-            sys.exit(0)
-
-        # Try to send message while there are processes in the ring
-        while len(self.fingerTable.ft) > 0:
-            proc = self.fingerTable.findProcess(position, overshoot)
-            ret = self.send_msg(msg, proc, True)
-            # Check return status of send message
-            if ret['status'] == 'failure':
-                continue
-            else:
-                break
-        # Finger table is empty, so nowhere to forward
-        else:
-            return False
-
-        # Sent message successfully
-        return True
-
-
-
     # Function to continuously listen for messages from other processes
     def readMessages(self):
         
@@ -762,6 +711,65 @@ class P2PHashTableClient:
 
 
 
+    # A function to determine whether a given message is your responsibility
+    def consultFingerTable(self, position, msg, overshoot=True):
+        
+        # Just in case: add previous and next to finger table and delete yourself
+        self.fingerTable.addNode(self.next)
+        self.fingerTable.addNode(self.prev)
+        self.fingerTable.delNode(self.ipAddress)
+
+        # If finger table is empty, then you are responsible
+        if len(self.fingerTable.ft) <= 0:
+            return True
+
+        elif self.highRange < self.lowRange:
+            if 0 <= position <= self.highRange:
+                return True
+            elif self.lowRange <= position <= 2 * math.pi:
+                return True
+            # Not responsible for this, so forward message
+            else:
+                return not self.forwardMessage(msg, position, overshoot)
+            
+        elif self.lowRange <= position <= self.highRange:
+            return True
+            
+        elif self.lowRange == self.highRange:
+            return True
+            
+        # Not responsible for this, so forward message
+        else:
+            return not self.forwardMessage(msg, position, overshoot)
+   
+
+
+    # Forward a message to another node
+    def forwardMessage(self, msg, position, overshoot=True):
+        
+        # If finger table is empty, then there is an error
+        if len(self.fingerTable.ft) <= 0:
+            print('An error occurred.')
+            sys.exit(0)
+
+        # Try to send message while there are processes in the ring
+        while len(self.fingerTable.ft) > 0:
+            proc = self.fingerTable.findProcess(position, overshoot)
+            ret = self.send_msg(msg, proc, True)
+            # Check return status of send message
+            if ret['status'] == 'failure':
+                continue
+            else:
+                break
+        # Finger table is empty, so nowhere to forward
+        else:
+            return False
+
+        # Sent message successfully
+        return True
+
+
+
     # Given a stream, perform an insert on hashtable
     def performInsert(self, userStream=None, processStream=None):
 
@@ -886,39 +894,6 @@ class P2PHashTableClient:
 
         
     
-    # A function to determine whether a given message is your responsibility
-    def consultFingerTable(self, position, msg, overshoot=True):
-        
-        # Just in case: add previous and next to finger table and delete yourself
-        self.fingerTable.addNode(self.next)
-        self.fingerTable.addNode(self.prev)
-        self.fingerTable.delNode(self.ipAddress)
-
-        # If finger table is empty, then you are responsible
-        if len(self.fingerTable.ft) <= 0:
-            return True
-
-        elif self.highRange < self.lowRange:
-            if 0 <= position <= self.highRange:
-                return True
-            elif self.lowRange <= position <= 2 * math.pi:
-                return True
-            # Not responsible for this, so forward message
-            else:
-                return not self.forwardMessage(msg, position, overshoot)
-            
-        elif self.lowRange <= position <= self.highRange:
-            return True
-            
-        elif self.lowRange == self.highRange:
-            return True
-            
-        # Not responsible for this, so forward message
-        else:
-            return not self.forwardMessage(msg, position, overshoot)
-   
-
-
     # Send a message to a destination to update their next pointer
     def sendUpdateNext(self, next_args, dest_args):
         msg = {'method': 'updateNext', 'next': next_args, 'from': [self.highRange, self.ipAddress, self.port]}
@@ -1002,14 +977,6 @@ class P2PHashTableClient:
 
         # Send message
         self.consultFingerTable(hashedIP, msg)
-
-
-
-    # Send a request to join the ring
-    def sendJoinRequest(self, dest_args):
-        msg = {'method': 'joinReq', 'from': [self.highRange, self.ipAddress, self.port]}
-        ret_msg = self.send_msg(msg, dest_args, True)
-        return ret_msg
 
 
 
