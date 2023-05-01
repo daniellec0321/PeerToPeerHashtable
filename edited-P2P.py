@@ -1071,12 +1071,23 @@ class P2PHashTableClient:
 
 # Main Function
 if __name__ == '__main__':
+
     cleanExit = True
+    projectName = 'begloff-project'
+
     if len(sys.argv) == 2:
         try:
             cleanExit = bool(int(sys.argv[1]))
         except:
-            print(f'{sys.argv[1]} is not a valid flag for \'cleanExit\'.')
+            projectName = sys.argv[1]
+
+    elif len(sys.argv) == 3:
+        try:
+            cleanExit = bool(int(sys.argv[2]))
+            projectName = sys.argv[1]
+        except:
+            print(f'{sys.argv[2]} is not a valid flag for \'cleanExit\'.')
             sys.exit(1)
-    projectName = 'dcroft-project'
+
+    print(f'Project name is {projectName} and clean exit is set to {cleanExit}')
     client = P2PHashTableClient(clean_exit=cleanExit, projectName=projectName)
