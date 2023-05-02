@@ -1072,25 +1072,6 @@ class P2PHashTableClient:
 # Main Function
 if __name__ == '__main__':
 
-    '''
-    cleanExit = True
-    projectName = 'begloff-project'
-
-    if len(sys.argv) == 2:
-        try:
-            cleanExit = bool(int(sys.argv[1]))
-        except:
-            projectName = sys.argv[1]
-
-    elif len(sys.argv) == 3:
-        try:
-            cleanExit = bool(int(sys.argv[2]))
-            projectName = sys.argv[1]
-        except:
-            print(f'{sys.argv[2]} is not a valid flag for \'cleanExit\'.')
-            sys.exit(1)
-    '''
-
     if len(sys.argv) != 3:
         print('Usage: $ python3 P2PHashTableClient.py [project name] [clean exit (0/1)]\n')
         print('NOTE: The clean exit flag allows for the simulation of a crash. If it is set to 0, then ending the process will cause it to exit without any of the leaving ring semantics that we defined.')
