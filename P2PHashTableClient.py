@@ -16,7 +16,7 @@ UNIT = (2 * math.pi) / pow(2, 32)
 
 class P2PHashTableClient:
 
-    def __init__(self, projectName='begloff-project', clean_exit=True):
+    def __init__(self, projectName='begloff-project'):
 
         # IP address and port of the client
         self.ipAddress = None
@@ -43,9 +43,6 @@ class P2PHashTableClient:
         self.lowRange = None # Lowest radian number client is responsible for
         self.fingerTable = FingerTable() # Client's finger table
         
-        # For debugging: whether the node should exit cleanly or "crash"
-        self.clean_exit = clean_exit
-
         # Internal Hashtable to allow for rebalancing
         self.TEMP = dict()
 
@@ -67,9 +64,6 @@ class P2PHashTableClient:
     def __del__(self):
 
         print('\nExiting program...')
-        if self.clean_exit == False:
-            print('Program crashed.')
-            return
 
         # Alert the next node
         if self.next and self.next[1] != self.ipAddress:
@@ -1072,20 +1066,10 @@ class P2PHashTableClient:
 # Main Function
 if __name__ == '__main__':
 
-    if len(sys.argv) != 3:
-        print('Usage: $ python3 P2PHashTableClient.py [project name] [clean exit (0/1)]\n')
-        print('NOTE: The clean exit flag allows for the simulation of a crash. If it is set to 0, then ending the process will cause it to exit without any of the leaving ring semantics that we defined.')
-        sys.exit(1)
-
-    try:
-        cleanExit = bool(int(sys.argv[2]))
-    except:
-        print('Usage: $ python3 P2PHashTableClient.py [project name] [clean exit (0/1)]\n')
-        print('NOTE: The clean exit flag allows for the simulation of a crash. If it is set to 0, then ending the process will cause it to exit without any of the leaving ring semantics that we defined.')
+    if len(sys.argv) != 2:
+        print('Usage: $ python3 P2PHashTableClient.py [project name]')
         sys.exit(1)
 
     projectName = sys.argv[1]
-    cleanExit = bool(int(sys.argv[2]))
 
-    print(f'Project name is {projectName} and clean exit is set to {cleanExit}')
-    client = P2PHashTableClient(clean_exit=cleanExit, projectName=projectName)
+    client = P2PHashTableClient(projectName=projectName)
